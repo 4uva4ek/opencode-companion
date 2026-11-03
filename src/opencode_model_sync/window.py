@@ -84,6 +84,10 @@ class ProviderCard(QFrame):
         layout.setSpacing(10)
         layout.addWidget(dot, 0, Qt.AlignmentFlag.AlignTop)
         layout.addLayout(text, 1)
+        if provider.untranslatable:
+            stuck = pill("V1", "warning")
+            stuck.setToolTip(tr("card.stuckInLegacy", keys=", ".join(provider.untranslatable)))
+            layout.addWidget(stuck)
         if new:
             badge = pill(f"+{new}", "accent")
             badge.setToolTip(tr("card.new"))

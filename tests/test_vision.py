@@ -10,7 +10,7 @@ import pytest
 from PIL import Image
 
 from opencode_model_sync import discovery, vision
-from opencode_model_sync.config import ConfigError, OpencodeConfig, configured_vision
+from opencode_model_sync.config import ConfigError, OpencodeConfig, configured_vision, moved_entry
 from opencode_model_sync.discovery import RemoteModel
 
 
@@ -48,7 +48,7 @@ def test_native_ollama_and_lmstudio_capabilities(monkeypatch):
 
 
 @pytest.mark.parametrize("section,key", [("provider", "modalities"), ("providers", "capabilities")])
-def test_manual_vision_preserves_modalities_tools_and_overrides(tmp_path, section, key):
+def test_manual_vision_keeps_modality_tools_and_overrides(tmp_path, section, key):
     model = {key: {"input": ["text", "audio", "pdf"], "output": ["audio"], "tools": False},
              "tool_call": False, "limit": {"context": 65536, "output": 8192}, "options": {"temperature": .4},
              "variants": {"custom": {"reasoningEffort": "high"}}}
@@ -58,13 +58,27 @@ def test_manual_vision_preserves_modalities_tools_and_overrides(tmp_path, sectio
     config = OpencodeConfig.load(path)
     config.set_model_vision('p', 'm', True)
     config.save()
+
     saved = json.loads(path.read_text())
-    assert saved[section]['p']['models']['m'][key]['input'] == ['text', 'audio', 'pdf', 'image']
+    assert "provider" not in saved and saved['username'] == 'keep'
+    moved = saved['providers']['p']['models']['m']
+    assert moved['capabilities']['input'] == ['text', 'audio', 'pdf', 'image'], "the word changes, the choice does not"
+    assert moved['capabilities']['output'] == ['audio'] and moved['capabilities']['tools'] is False
+    assert moved['limit'] == {"context": 65536, "output": 8192}
+    assert moved['settings'] == {"temperature": .4}
+    assert moved['variants'] == [{'id': 'custom', 'settings': {'reasoningEffort': 'high'}}]
+    assert saved['providers']['p']['settings'] == {'apiKey': 'secret'}
+
+    before_second_write = path.read_text()
+    config = OpencodeConfig.load(path)
     config.set_model_vision('p', 'm', False)
     config.save()
-    assert json.loads(path.read_text()) == data
-    backups = list(tmp_path.glob('*.bak-model-sync-*'))
-    assert len(backups) == 1 and json.loads(backups[0].read_text()) == data
+    again = json.loads(path.read_text())['providers']['p']['models']['m']
+    assert again['capabilities'] == {'input': ['text', 'audio', 'pdf'], 'output': ['audio'], 'tools': False}, \
+        "off again, and the entry the move produced is left exactly as it is otherwise"
+    # A write backs up the file as it stood for it, not the one it has long since replaced.
+    backup, = tmp_path.glob('*.bak-model-sync-*')
+    assert backup.read_text() == before_second_write
 
 
 @pytest.mark.parametrize("section,key", [("provider", "modalities"), ("providers", "capabilities")])
@@ -81,15 +95,16 @@ def test_sync_enriches_existing_models_without_overriding_explicit_input(tmp_pat
     assert [model.id for model in candidates] == ['existing', 'new']
     discovery.apply(config, 'p', models, [])
     saved = OpencodeConfig.load(path)
-    assert set(saved.data) == {section}
+    assert set(saved.data) == {'providers'}, "whichever map it came in, one map holds the result"
     existing = saved.provider('p').models['existing']
-    expected = copy.deepcopy(original)
-    expected[key]['input'] = ['text', 'image']
-    assert existing == expected
-    assert saved.provider('p').models['manual'] == explicit
+    assert existing == {'name': 'Keep', 'limit': {'context': 123, 'output': 45},
+                        'capabilities': {'output': ['audio'], 'tools': False, 'input': ['text', 'image']}}
+    assert saved.provider('p').models['manual'] == {'capabilities': {'input': ['text'], 'output': ['text']}}, \
+        "an explicit choice is not enriched, only spelled the new way"
     assert saved.provider('p').models['unknown'] == {}
-    assert saved.provider('p').models['new'][key] == {'input': ['text', 'image'], 'output': ['text']}
+    assert saved.provider('p').models['new']['capabilities'] == {'input': ['text', 'image'], 'output': ['text']}
     assert discovery.sync_candidates(saved.provider('p'), discovery.Discovery(True, models=models)) == []
+    # Reading is still done in the words the entry itself is written in.
     assert configured_vision(explicit, section) is False
 
 
@@ -194,7 +209,7 @@ def test_test_images_match_expected_labels(monkeypatch):
 
 @pytest.mark.parametrize('section,key,options,id_field', [
     ('provider', 'modalities', 'options', 'id'), ('providers', 'capabilities', 'settings', 'modelID')])
-def test_probe_saves_existing_alias_in_correct_section_and_merges_unrelated_edits(tmp_path, monkeypatch, section, key, options, id_field):
+def test_probe_moves_an_existing_alias_and_merges_unrelated_edits(tmp_path, monkeypatch, section, key, options, id_field):
     path = tmp_path / 'opencode.json'
     original = {section: {'strata-pc': {options: {'baseURL': 'http://server/v1', 'apiKey': 'key'},
         'models': {'alias': {id_field: 'iq3_s', key: {'input': ['text', 'audio'], 'output': ['text']},
@@ -209,12 +224,12 @@ def test_probe_saves_existing_alias_in_correct_section_and_merges_unrelated_edit
         return vision.ProbeResult(True)
     monkeypatch.setattr(vision, 'probe', probe)
     assert vision.probe_and_enable(path, 'strata-pc', 'alias').supported is True
-    saved = json.loads(path.read_text())
-    expected = copy.deepcopy(original)
-    expected['username'] = 'external'
-    expected[section]['strata-pc']['models']['sibling'] = {'name': 'Added externally'}
-    expected[section]['strata-pc']['models']['alias'][key]['input'].append('image')
-    assert saved == expected
+    # The unrelated edit landed in the map the config came in; the write moves the whole provider and
+    # takes that edit along, so the result is the merged entry spelled in the one map that is written.
+    merged = copy.deepcopy(original[section]['strata-pc'])
+    merged['models']['sibling'] = {'name': 'Added externally'}
+    merged['models']['alias'][key]['input'].append('image')
+    assert json.loads(path.read_text()) == {'username': 'external', 'providers': {'strata-pc': moved_entry(merged)}}
     assert list(tmp_path.glob('*.bak-model-sync-*'))
 
 
@@ -267,8 +282,9 @@ def test_real_probe_enables_strata_style_existing_model(image_server, tmp_path, 
         'name': 'Qwen3.8-Flash-Next IQ3_S', 'limit': {'context': 64000, 'output': 8000}}}}}}))
     before = path.read_text()
     assert vision.probe_and_enable(path, 'strata-pc', 'iq3_s').supported is True
-    saved = json.loads(path.read_text())[section]['strata-pc']['models']['iq3_s']
-    assert saved[key]['input'] == ['text', 'image']
+    saved = json.loads(path.read_text())['providers']['strata-pc']['models']['iq3_s']
+    assert saved['capabilities']['input'] == ['text', 'image']
+    assert key not in saved or key == 'capabilities', "one word for one map"
     assert saved['limit'] == {'context': 64000, 'output': 8000}
     assert len(state['requests']) == 2
     backup, = tmp_path.glob('*.bak-model-sync-*')
@@ -281,9 +297,9 @@ def test_probe_can_add_a_new_selected_model(tmp_path, monkeypatch):
     monkeypatch.setattr(vision, 'probe', lambda *a, **kw: vision.ProbeResult(True))
     result = vision.probe_and_enable(path, 'p', 'new', RemoteModel('new', context=8192, tools=True))
     assert result.supported is True
-    model = json.loads(path.read_text())['provider']['p']['models']['new']
-    assert model['modalities']['input'] == ['text', 'image']
-    assert model['tool_call'] is True and model['limit']['context'] == 8192
+    model = json.loads(path.read_text())['providers']['p']['models']['new']
+    assert model['capabilities']['input'] == ['text', 'image']
+    assert model['capabilities']['tools'] is True and model['limit']['context'] == 8192
 
 
 def test_failed_probe_preserves_enabled_vision(tmp_path, monkeypatch):
@@ -313,6 +329,14 @@ def test_model_endpoint_and_custom_auth_overrides_are_used(tmp_path, monkeypatch
         return vision.ProbeResult(True)
     monkeypatch.setattr(vision, 'probe', probe)
     vision.probe_and_enable(path, 'p', 'alias')
-    saved = json.loads(path.read_text())
-    del saved['provider']['p']['models']['alias']['modalities']
-    assert saved == data
+    # The probe already saw the overridden endpoint, key and headers; what is left to prove is that the
+    # move to the written map kept every one of them, since a lost override means another server.
+    provider = json.loads(path.read_text())['providers']['p']
+    assert provider['settings'] == {'baseURL': 'http://default/v1', 'apiKey': 'fallback'}
+    assert provider['headers'] == {'X-Provider': 'keep'}
+    alias = provider['models']['alias']
+    assert alias['modelID'] == 'actual-model'
+    assert alias['settings']['baseURL'] == 'http://override/v1'
+    assert alias['settings']['headers'] == {'Authorization': 'Bearer {env:VISION_TEST_KEY}'}
+    assert alias['headers'] == {'X-Model': 'keep'}
+    assert alias['capabilities']['input'] == ['text', 'image']

@@ -22,7 +22,7 @@ A small desktop app for Linux, macOS (Apple Silicon) and Windows. It asks your m
 - The **Workspaces** tab lists the folders opencode works in and cleans up the rows that are stuck there.
 - Lives in the tray. Light or dark theme follows the system. Russian and English interface.
 
-New providers use the documented `provider` map with `npm` and `options` on every OS. Model edits and display switches preserve that format. Existing `providers` entries are retained for compatibility; they are not automatically migrated.
+Providers are read from either map — the legacy `provider` map (`npm`, `options`) and the current `providers` map (`package`, `settings`) — but every edit writes one map only: `providers`, spelled the way that map is read. `npm` becomes the `aisdk:` package that loads it, `options` split into `settings`, `headers` and a request body, a model's `tool_call` moves into `capabilities`. An ID present in both maps is the current entry, and the copy opencode never reads goes with the next write. A provider holding a setting `providers` has no place for is the one exception: it stays in the map opencode still reads it from, is marked **V1**, and refuses an edit naming that setting rather than quietly dropping it.
 
 The **Settings** and **MCP** tabs can edit `.jsonc` while retaining comments and unchanged values. The existing provider sync and agent editing actions still refuse to rewrite files containing comments.
 
@@ -34,10 +34,10 @@ The provider list shows **Images**, **No images**, or **Images ?** when capabili
 
 For a server without metadata, press **Test** beside the selected model. After confirmation, Companion sends up to two small randomized synthetic images to the OpenAI-compatible `/chat/completions` endpoint, outside the UI thread. This can load a model and incur generation costs; each request has a 60-second timeout. It sends no personal images and never runs generation during background discovery or Sync. HTTP 200 is insufficient: both responses must correctly identify the shapes, colors and positions. Errors, unsupported parameters and inconclusive answers leave support undetermined and the config unchanged. A successful test enables image input (and adds the model if it is new). Endpoint, model-ID and authentication overrides are respected; concurrent changes to the tested provider/model are detected before saving.
 
-The config keeps its existing format:
+Image input is written in the words of the one map that is written:
 
-- `provider` / `npm` / `options`: `models.<id>.modalities.input = ["text", "image"]`, `modalities.output = ["text"]`.
 - `providers` / `package` / `settings`: `models.<id>.capabilities.input = ["text", "image"]`, preserving the other capability fields.
+- A provider that came from `provider` / `npm` / `options` arrives there through the same translation, so its `models.<id>.modalities` becomes `capabilities`.
 
 Existing input/output modalities are preserved; disabling images removes only `image` from input. Saves use the normal backup and atomic write. As with other provider edits, commented JSONC is refused rather than rewritten; a visual test is not started when its result cannot safely be saved. These formats follow the [OpenCode 1.x model schema](https://github.com/anomalyco/opencode/blob/v1.2.27/packages/opencode/src/provider/models.ts) and [current provider config schema](https://github.com/anomalyco/opencode/blob/dev/packages/schema/src/config/provider.ts).
 

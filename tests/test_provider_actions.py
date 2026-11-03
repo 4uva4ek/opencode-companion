@@ -44,7 +44,7 @@ def test_rename_action_persists_and_keeps_selection(view, monkeypatch):
     widget, path = view
     monkeypatch.setattr(QInputDialog, "getText", lambda *a, **kw: ("Renamed", True))
     action_menu(widget).actions()[0].trigger()
-    assert json.loads(path.read_text())["provider"]["local"]["name"] == "Renamed"
+    assert json.loads(path.read_text())["providers"]["local"]["name"] == "Renamed"
     assert widget.selected == "local"
     assert widget.config.provider("local").title == "Renamed"
 
@@ -61,7 +61,7 @@ def test_remove_requires_confirmation_and_updates_selection(view, monkeypatch):
     monkeypatch.setattr(QMessageBox, "question", confirm)
     widget.checked["local"] = {"model"}
     action_menu(widget).actions()[1].trigger()
-    assert json.loads(path.read_text())["provider"] == {}
+    assert json.loads(path.read_text()) == {}, "a map that lost its last provider leaves with it"
     assert widget.selected is None
     assert "local" not in widget.checked
 
@@ -113,7 +113,7 @@ def test_two_switches_keep_labels_and_change_only_their_own_state(view, language
         i18n.set_language(previous)
 
 
-def test_the_switch_in_a_row_preserves_the_provider_format(view):
+def test_the_switch_in_a_row_writes_the_one_word_opencode_reads(view):
     """The point of the button: one click instead of opening the settings of opencode."""
     widget, path = view
     path.write_text(
@@ -121,7 +121,7 @@ def test_the_switch_in_a_row_preserves_the_provider_format(view):
             "name": "Local",
             "npm": "@ai-sdk/openai-compatible",
             "options": {"baseURL": "http://localhost:1234/v1"},
-            # The old map is switched off by its own word, and a stray ``disabled`` of it is nothing.
+            # Read from the old map, its own words still say what opencode does with each model.
             "models": {"on": {"tool_call": True}, "off": {"status": "deprecated"}},
         }}})
     )
@@ -132,13 +132,15 @@ def test_the_switch_in_a_row_preserves_the_provider_format(view):
     assert rows["on"].model_switch.isChecked()
     assert not rows["off"].model_switch.isChecked()
 
-    rows["on"].model_switch.click()  # off: keep the provider format
+    rows["on"].model_switch.click()  # off: the word the old map ignores would hide nothing
     rows_of(widget)["off"].model_switch.click()  # on: only the mark leaves the entry
     saved = json.loads(path.read_text())
-    assert list(saved["provider"]["local"]["models"]) == ["on", "off"]
-    assert saved["provider"]["local"]["models"]["on"] == {"tool_call": True, "status": "deprecated"}
-    assert saved["provider"]["local"]["models"]["off"] == {}
-    assert "providers" not in saved
+    assert "provider" not in saved, "the edit took the provider to the map opencode reads"
+    assert saved["providers"]["local"]["package"] == "aisdk:@ai-sdk/openai-compatible"
+    assert saved["providers"]["local"]["settings"] == {"baseURL": "http://localhost:1234/v1"}
+    assert list(saved["providers"]["local"]["models"]) == ["on", "off"]
+    assert saved["providers"]["local"]["models"]["on"] == {"capabilities": {"tools": True}, "disabled": True}
+    assert saved["providers"]["local"]["models"]["off"] == {}, "the old word left with the move, nothing kept it"
 
     widget.render()
     rows = rows_of(widget)
@@ -170,11 +172,13 @@ def test_image_controls_expose_unknown_and_manual_choice(view):
     row = rows_of(widget)['m']
     assert row.vision_switch.text() == i18n.tr('vision.unknown')
     row.vision_switch.click()
-    saved = json.loads(path.read_text())['provider']['local']['models']['m']
-    assert saved['modalities'] == {'input': ['text', 'image'], 'output': ['text']}
-    assert saved['tool_call'] is False and saved['limit'] == {'context': 123, 'output': 45}
+    saved = json.loads(path.read_text())['providers']['local']['models']['m']
+    assert saved['capabilities'] == {'tools': False, 'input': ['text', 'image'], 'output': ['text']}, \
+        "the old words come along with the provider, into the map that is written"
+    assert saved['limit'] == {'context': 123, 'output': 45}
+    assert 'modalities' not in saved and 'tool_call' not in saved
     rows_of(widget)['m'].vision_switch.click()
-    assert json.loads(path.read_text())['provider']['local']['models']['m']['modalities']['input'] == ['text']
+    assert json.loads(path.read_text())['providers']['local']['models']['m']['capabilities']['input'] == ['text']
     widget.busy = True
     widget.render()
     assert not rows_of(widget)['m'].probe_button.isEnabled()
@@ -204,7 +208,7 @@ def test_image_probe_requires_confirmation_and_runs_as_a_task(view, monkeypatch)
     work, done, failed = queued[0]
     done(work())
     assert not widget.busy
-    assert json.loads(path.read_text())['provider']['local']['models']['m']['modalities']['input'] == ['text', 'image']
+    assert json.loads(path.read_text())['providers']['local']['models']['m']['capabilities']['input'] == ['text', 'image']
     assert calls[-1][1] == 'success'
 
 
@@ -216,6 +220,6 @@ def test_sync_button_enriches_existing_model(view):
     widget._reload_config()
     widget.results['local'] = window.Discovery(True, models=[window.RemoteModel('m', vision=True)])
     widget.sync('local')
-    saved = json.loads(path.read_text())['provider']['local']['models']['m']
-    assert saved == {'name': 'Custom name', 'tool_call': False,
-                     'modalities': {'input': ['text', 'image'], 'output': ['text']}}
+    saved = json.loads(path.read_text())['providers']['local']['models']['m']
+    assert saved == {'name': 'Custom name',
+                     'capabilities': {'tools': False, 'input': ['text', 'image'], 'output': ['text']}}

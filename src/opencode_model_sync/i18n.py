@@ -67,6 +67,8 @@ _TEXT: dict[str, dict[str, str]] = {
         "card.offline": "No response: {error}",
         "card.count": "Models in the opencode config",
         "card.new": "New models on the server",
+        "card.stuckInLegacy": "Held by the old provider map: {keys} have no place in providers. This app writes "
+        "nothing into it until those settings are gone.",
         "suggestion.models": "models: {count}",
         "suggestion.add": "Add",
         "row.context": "Context: {count} tokens",
@@ -114,7 +116,7 @@ _TEXT: dict[str, dict[str, str]] = {
         "banner.toolsOff": "{model}: tool calling is off.",
         "banner.modelOn": "{model}: shown in the OpenCode model catalog.",
         "banner.modelOff": "{model}: hidden from the OpenCode model catalog.",
-        "banner.modelOffMoved": "{model}: hidden from the model catalog. Provider {provider} was moved to the providers section.",
+        "banner.modelOffMoved": "{model}: hidden from the model catalog. The provider {provider} is now written in the providers map.",
         "remove.title": "Remove models",
         "remove.text": "Remove the selected models from the opencode config ({count})?",
         "dialog.title": "New provider",
@@ -139,6 +141,9 @@ _TEXT: dict[str, dict[str, str]] = {
         "error.badId": "A provider ID may contain only letters, digits, '.', '_' and '-'.",
         "error.exists": "Provider “{id}” already exists.",
         "error.missing": "Provider “{id}” is not in the config.",
+        "error.stuckInLegacy": "Provider “{id}” holds {keys}, which the providers map has no place for, so it is "
+        "left in the old provider map and this app writes nothing into it. Drop those settings or move the "
+        "provider into the providers map by hand, and try again.",
         "error.invalidJson": "{file} is not valid JSON: {error}",
         "sidebar.agents": "AGENTS",
         "nav.agents": "Agents and teams",
@@ -322,8 +327,6 @@ _TEXT: dict[str, dict[str, str]] = {
         "error.database": "opencode's database cannot be read: {error}",
         "error.forceRequired": "The worktree has changes of its own.",
         "error.opencodeFailed": "opencode refused the request.",
-        "error.cannotMove": "Provider “{id}” holds {keys}, which the providers section has no place for. "
-        "Move the provider into that section by hand, or drop those settings, and switch the model again.",
         "row.display": "Display",
         "row.visibleHint": "Shown in the OpenCode model catalog. Click to hide.",
         "row.hiddenHint": "Hidden from the OpenCode model catalog; settings are preserved. Click to show.",
@@ -386,6 +389,8 @@ _TEXT: dict[str, dict[str, str]] = {
         "card.offline": "Нет ответа: {error}",
         "card.count": "Моделей в конфиге opencode",
         "card.new": "Новых моделей на сервере",
+        "card.stuckInLegacy": "Провайдер остался в старом разделе provider: {keys} некуда перенести в providers. "
+        "Пока этих настроек нет, программа в него ничего не пишет.",
         "suggestion.models": "моделей: {count}",
         "suggestion.add": "Добавить",
         "row.context": "Контекст: {count} токенов",
@@ -433,7 +438,7 @@ _TEXT: dict[str, dict[str, str]] = {
         "banner.toolsOff": "{model}: вызов инструментов выключен.",
         "banner.modelOn": "{model}: отображена в каталоге моделей OpenCode.",
         "banner.modelOff": "{model}: скрыта из каталога моделей OpenCode.",
-        "banner.modelOffMoved": "{model}: скрыта из каталога моделей. Провайдер «{provider}» перенесён в раздел providers.",
+        "banner.modelOffMoved": "{model}: скрыта из каталога моделей. Провайдер «{provider}» теперь записан в разделе providers.",
         "remove.title": "Удалить модели",
         "remove.text": "Удалить выбранные модели из конфига opencode ({count})?",
         "dialog.title": "Новый провайдер",
@@ -458,6 +463,9 @@ _TEXT: dict[str, dict[str, str]] = {
         "error.badId": "ID провайдера может содержать только буквы, цифры, «.», «_» и «-».",
         "error.exists": "Провайдер «{id}» уже существует.",
         "error.missing": "Провайдера «{id}» нет в конфиге.",
+        "error.stuckInLegacy": "У провайдера «{id}» есть {keys}, для которых в разделе providers нет места, поэтому "
+        "он оставлен в старом разделе provider, и эта программа в него ничего не пишет. Уберите эти настройки или "
+        "перенесите провайдера в раздел providers вручную, и попробуйте снова.",
         "error.invalidJson": "{file} не является корректным JSON: {error}",
         "sidebar.agents": "АГЕНТЫ",
         "nav.agents": "Агенты и команды",
@@ -641,8 +649,6 @@ _TEXT: dict[str, dict[str, str]] = {
         "error.database": "Не удалось прочитать базу opencode: {error}",
         "error.forceRequired": "У worktree есть свои изменения.",
         "error.opencodeFailed": "opencode отказал в запросе.",
-        "error.cannotMove": "У провайдера «{id}» есть {keys}, для которых в разделе providers нет места. "
-        "Перенесите провайдера в этот раздел вручную или уберите эти настройки, потом выключайте модель.",
         "row.display": "Отображение",
         "row.visibleHint": "Модель отображена в каталоге OpenCode. Нажмите, чтобы скрыть.",
         "row.hiddenHint": "Модель скрыта из каталога OpenCode; настройки сохранены. Нажмите, чтобы отобразить.",
