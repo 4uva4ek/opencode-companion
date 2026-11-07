@@ -1,6 +1,6 @@
 [project]
 name = "opencode-companion"
-version = "0.6.0"
+version = "0.7.1"
 description = "Desktop companion for OpenCode models, agents, MCP servers, workspaces and settings"
 readme = "README.md"
 license = "MIT"

@@ -26,18 +26,17 @@ def config(tmp_path: Path) -> OpencodeConfig:
     path.write_text(
         json.dumps(
             {
-                "provider": {
+                "providers": {
                     "lmstudio": {
-                        "options": {"baseURL": "http://127.0.0.1:1234/v1"},
-                        "models": {"qwen-coder": {"name": "Qwen Coder", "tool_call": False, "limit": {"context": 65536, "output": 1}}},
+                        "settings": {"baseURL": "http://127.0.0.1:1234/v1"},
+                        "models": {"qwen-coder": {"name": "Qwen Coder", "capabilities": {"tools": False}, "limit": {"context": 65536, "output": 1}}},
                     },
                     "remote": {
-                        "options": {"baseURL": "https://api.example.com/v1"},
-                        "models": {"m": {}, "off": {"status": "deprecated"}},
+                        "settings": {"baseURL": "https://api.example.com/v1"},
+                        "models": {"m": {}, "off": {"disabled": True}},
                     },
+                    "openrouter": {"models": {"anthropic/claude-x": {"disabled": True}}},
                 },
-                # Each map is switched off in its own words, which the other map does not read.
-                "providers": {"openrouter": {"models": {"anthropic/claude-x": {"disabled": True}}}},
             }
         ),
         encoding="utf-8",

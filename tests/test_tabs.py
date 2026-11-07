@@ -17,8 +17,8 @@ def view(tmp_path, monkeypatch):
     app = QApplication.instance() or QApplication([])
     application.apply_theme(app)
     path = tmp_path / "opencode.json"
-    path.write_text(json.dumps({"provider": {"local": {
-        "name": "Local", "options": {"baseURL": "http://localhost:1234/v1"}, "models": {}
+    path.write_text(json.dumps({"providers": {"local": {
+        "name": "Local", "settings": {"baseURL": "http://localhost:1234/v1"}, "models": {}
     }}}))
     monkeypatch.setattr(window, "config_path", lambda: path)
     monkeypatch.setattr(window.MainWindow, "refresh", window.MainWindow._reload_config)

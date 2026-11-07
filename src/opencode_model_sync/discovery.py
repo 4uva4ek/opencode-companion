@@ -15,7 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any
 
-from .config import OpencodeConfig, Provider, configured_visible, configured_tools, configured_vision, vision_unset
+from .config import OpencodeConfig, Provider, configured_context, configured_visible, configured_tools, configured_vision, vision_unset
 
 # Embedding, speech, image and moderation models share the listing but cannot drive a chat session.
 NON_CHAT = re.compile(r"embed|whisper|tts|dall-e|moderation|transcribe|rerank|(^|[-/])image", re.IGNORECASE)
@@ -54,10 +54,18 @@ class ModelRow:
     configured_tools: bool | None = None
     configured_visible: bool = True
     configured_vision: bool | None = None
+    configured_context: int | None = None
 
     @property
     def in_config(self) -> bool:
         return self.status != "new"
+
+    @property
+    def context(self) -> int | None:
+        """The config's number wins over what the server happens to report today."""
+        if self.configured_context is not None:
+            return self.configured_context
+        return self.remote.context if self.remote else None
 
     @property
     def visible(self) -> bool:
@@ -111,8 +119,9 @@ def diff(provider: Provider, discovery: Discovery) -> list[ModelRow]:
             status="configured" if model_id in remote or not discovery.ok else "missing",
             remote=remote.get(model_id),
             configured_tools=configured_tools(entry),
-            configured_vision=configured_vision(entry, provider.section),
-            configured_visible=configured_visible(entry, provider.section),
+            configured_vision=configured_vision(entry),
+            configured_visible=configured_visible(entry),
+            configured_context=configured_context(entry),
         )
         for model_id, entry in provider.models.items()
     ]
@@ -128,7 +137,7 @@ def diff(provider: Provider, discovery: Discovery) -> list[ModelRow]:
 def apply(config: OpencodeConfig, provider_id: str, add: list[RemoteModel], remove: list[str]) -> None:
     config.add_models(
         provider_id,
-        {model.id: config.model_entry(provider_id, model.name, model.context, model.tools, model.vision) for model in add},
+        {model.id: config.model_entry(model.name, model.context, model.tools, model.vision) for model in add},
     )
     for model in add:
         if model.vision is not None:
@@ -139,7 +148,7 @@ def apply(config: OpencodeConfig, provider_id: str, add: list[RemoteModel], remo
 
 def sync_candidates(provider: Provider, result: Discovery) -> list[RemoteModel]:
     return [model for model in result.models if model.id not in provider.models or
-            model.vision is not None and vision_unset(provider.models[model.id], provider.section)]
+            model.vision is not None and vision_unset(provider.models[model.id])]
 
 
 def metadata_vision(item: dict) -> bool | None:

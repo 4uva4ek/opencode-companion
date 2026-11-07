@@ -4,7 +4,7 @@ Previously OpenCode Model Sync. Manage OpenCode models, agents, MCP servers, wor
 
 [Русская версия](README.ru.md)
 
-A small desktop app for Linux, macOS (Apple Silicon) and Windows. It asks your model servers which models they serve and adds them to the [opencode](https://opencode.ai) config. It works with the regular opencode release: opencode picks up config changes on its own.
+A small desktop app for Linux, macOS (Apple Silicon) and Windows. It asks your model servers which models they serve and adds them to the [opencode](https://opencode.ai) config. It requires OpenCode 2.x and works with the regular release: opencode picks up config changes on its own.
 
 ## Features
 
@@ -22,7 +22,7 @@ A small desktop app for Linux, macOS (Apple Silicon) and Windows. It asks your m
 - The **Workspaces** tab lists the folders opencode works in and cleans up the rows that are stuck there.
 - Lives in the tray. Light or dark theme follows the system. Russian and English interface.
 
-Providers are read from either map — the legacy `provider` map (`npm`, `options`) and the current `providers` map (`package`, `settings`) — but every edit writes one map only: `providers`, spelled the way that map is read. `npm` becomes the `aisdk:` package that loads it, `options` split into `settings`, `headers` and a request body, a model's `tool_call` moves into `capabilities`. An ID present in both maps is the current entry, and the copy opencode never reads goes with the next write. A provider holding a setting `providers` has no place for is the one exception: it stays in the map opencode still reads it from, is marked **V1**, and refuses an edit naming that setting rather than quietly dropping it.
+Providers are read and written in the one map OpenCode 2.x reads: `providers`, spelled with `package`, `settings` and `capabilities`. The old `provider` map is neither read nor migrated: a file still holding it is the user's own to clean up, and the app leaves those keys on disk untouched while editing its own map. OpenCode 2.x ignores that map just as faithfully.
 
 The **Settings** and **MCP** tabs can edit `.jsonc` while retaining comments and unchanged values. The existing provider sync and agent editing actions still refuse to rewrite files containing comments.
 
@@ -39,13 +39,13 @@ Image input is written in the words of the one map that is written:
 - `providers` / `package` / `settings`: `models.<id>.capabilities.input = ["text", "image"]`, preserving the other capability fields.
 - A provider that came from `provider` / `npm` / `options` arrives there through the same translation, so its `models.<id>.modalities` becomes `capabilities`.
 
-Existing input/output modalities are preserved; disabling images removes only `image` from input. Saves use the normal backup and atomic write. As with other provider edits, commented JSONC is refused rather than rewritten; a visual test is not started when its result cannot safely be saved. These formats follow the [OpenCode 1.x model schema](https://github.com/anomalyco/opencode/blob/v1.2.27/packages/opencode/src/provider/models.ts) and [current provider config schema](https://github.com/anomalyco/opencode/blob/dev/packages/schema/src/config/provider.ts).
+Existing input/output modalities are preserved; disabling images removes only `image` from input. Saves use the normal backup and atomic write. As with other provider edits, commented JSONC is refused rather than rewritten; a visual test is not started when its result cannot safely be saved. These formats follow the [OpenCode 2.x provider config schema](https://github.com/anomalyco/opencode/blob/dev/packages/schema/src/config/provider.ts).
 
 ## Settings and MCP
 
 Five independent tabs: Providers, Workspaces, Agents and teams, MCP, and Settings.
 
-- Settings covers the `opencode.json` schema for OpenCode 2.1.4: 29 current sections with nested fields and 19 V1 compatibility sections. Categories and search include experimental settings such as `experimental.subagent_depth`.
+- Settings covers the `opencode.json` schema for OpenCode 2.1.4: 29 sections with nested fields, no superseded names. Categories and search include experimental settings such as `experimental.subagent_depth`.
 - Finite choices use dropdowns; nested objects and ordered lists use forms. Arbitrary third-party SDK and plugin data uses JSON. Labels and hover descriptions support English and Russian.
 - Not set leaves the field absent, preserving inheritance and OpenCode defaults. Project configuration and managed policies can override global values.
 - MCP provides local and remote server creation, editing, removal and enable checkboxes backed by `disabled`. Server names stay constant; global timeouts expand separately.
@@ -80,7 +80,7 @@ Adding creates a draft on the MCP page. Press **Save** to write it to `mcp.serve
 
 ## Workspaces
 
-Database reading supports both OpenCode 1.x (`session`, `project.sandboxes`) and newer schemas (`session_v2`, `worktree`). Missing activity timestamps fall back to project timestamps. Removal/archive controls are disabled when the database does not support them; **Exclude** remains available without changing OpenCode.
+Database reading supports the OpenCode 2.x schema (`session_v2`, `worktree`); on an older database the page stays readable and simply shows no sessions. Missing activity timestamps fall back to project timestamps. Removal/archive controls are disabled when the database does not support them; **Exclude** remains available without changing OpenCode.
 
 The **Workspaces** tab lists the folders opencode works in and the git worktrees made from them, the same list opencode shows in its sidebar. Rows for folders that are no longer on the disk stay there for good, and opencode has no screen to clean them up.
 

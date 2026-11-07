@@ -11,7 +11,7 @@ import zlib
 from dataclasses import dataclass
 from pathlib import Path
 
-from .config import ConfigError, LEGACY, OpencodeConfig, resolve_variables
+from .config import PROVIDERS, ConfigError, OpencodeConfig, resolve_variables
 from .discovery import RemoteModel, _Client, _describe
 from .i18n import tr
 
@@ -103,22 +103,19 @@ def _snapshot(config: OpencodeConfig, provider_id: str, model_id: str) -> tuple:
     provider = config.provider(provider_id)
     if provider is None:
         raise ConfigError(tr("error.missing", id=provider_id))
-    entry = config.data[provider.section][provider_id]
-    return (provider.section, copy.deepcopy({key: value for key, value in entry.items() if key != "models"}),
+    entry = config.data[PROVIDERS][provider_id]
+    return (copy.deepcopy({key: value for key, value in entry.items() if key != "models"}),
             copy.deepcopy(provider.models.get(model_id)))
 
 
 def _target(snapshot: tuple, model_id: str) -> tuple[str, str, str | None, dict]:
-    section, provider, model = snapshot
+    provider, model = snapshot
     model = model or {}
-    key = "options" if section == LEGACY else "settings"
-    provider_options, model_options = provider.get(key, {}), model.get(key, {})
+    provider_options, model_options = provider.get("settings", {}), model.get("settings", {})
     options = {**provider_options, **model_options}
     # Honor endpoint and API model ID overrides without changing them in the config.
     base = options.get("baseURL")
-    if section == LEGACY and isinstance(model.get("provider"), dict):
-        base = model["provider"].get("api") or base
-    name = model.get("id" if section == LEGACY else "modelID") or model_id
+    name = model.get("modelID") or model_id
     headers = {**provider_options.get("headers", {}), **provider.get("headers", {}),
                **model_options.get("headers", {}), **model.get("headers", {})}
     if not isinstance(base, str) or not base or not isinstance(name, str):
@@ -133,7 +130,7 @@ def probe_and_enable(path: Path, provider_id: str, model_id: str, remote: Remote
     if config.has_comments:
         raise ConfigError(tr("error.comments", file=path.name))
     before = _snapshot(config, provider_id, model_id)
-    if before[2] is None and (remote is None or remote.id != model_id):
+    if before[1] is None and (remote is None or remote.id != model_id):
         raise ConfigError(tr("error.missing", id=model_id))
     base, name, key, headers = _target(before, model_id)
     result = probe(base, name, key, headers=headers)
@@ -143,11 +140,11 @@ def probe_and_enable(path: Path, provider_id: str, model_id: str, remote: Remote
     fresh = OpencodeConfig.load(path)
     if _snapshot(fresh, provider_id, model_id) != before:
         raise ConfigError(tr("vision.changed"))
-    if before[2] is None:
+    if before[1] is None:
         if remote is None or remote.id != model_id:
             raise ConfigError(tr("error.missing", id=model_id))
         fresh.add_models(provider_id, {model_id: fresh.model_entry(
-            provider_id, remote.name, remote.context, remote.tools)})
+            remote.name, remote.context, remote.tools)})
     fresh.set_model_vision(provider_id, model_id, True)
     fresh.save()
     return result

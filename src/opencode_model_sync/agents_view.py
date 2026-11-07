@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
@@ -295,9 +294,8 @@ class AgentDialog(QDialog):
             self.mode.setItemData(self.mode.count() - 1, tr(f"mode.{mode}Hint"), Qt.ItemDataRole.ToolTipRole)
         self.mode.setCurrentIndex(MODES.index(self.item.mode))
         self.model = ModelField(models, self.item.model)
-        self.temperature = QLineEdit("" if self.item.temperature is None else f"{self.item.temperature:g}")
-        self.temperature.setPlaceholderText(tr("agent.temperaturePlaceholder"))
-        self.temperature.setEnabled(self.item.section == agents.LEGACY)
+        self.steps = QLineEdit("" if self.item.steps is None else str(self.item.steps))
+        self.steps.setPlaceholderText(tr("agent.stepsPlaceholder"))
         self.prompt = QPlainTextEdit(self.item.prompt)
         self.prompt.setPlaceholderText(tr("agent.promptPlaceholder"))
         self.prompt.setMinimumHeight(120)
@@ -323,12 +321,13 @@ class AgentDialog(QDialog):
         top = QGridLayout()
         top.setHorizontalSpacing(12)
         top.addWidget(label(tr("agent.mode"), "fieldLabel"), 0, 0)
-        top.addWidget(label(tr("agent.temperature"), "fieldLabel"), 0, 1)
+        top.addWidget(label(tr("agent.steps"), "fieldLabel"), 0, 1)
         top.addWidget(self.mode, 1, 0)
-        top.addWidget(self.temperature, 1, 1)
+        top.addWidget(self.steps, 1, 1)
         top.setColumnStretch(0, 2)
         top.setColumnStretch(1, 1)
         form.addLayout(top)
+        form.addWidget(label(tr("agent.stepsHint"), "hint", wrap=True))
         form.addSpacing(6)
         field(tr("agent.model"), self.model)
         field(tr("agent.prompt"), self.prompt)
@@ -339,11 +338,10 @@ class AgentDialog(QDialog):
         for row, key in enumerate(PERMISSIONS):
             grid.addWidget(label(tr(f"access.{key}")), row, 0)
             grid.addWidget(self.access[key], row, 1)
-            self.access[key].setEnabled(self.item.editable_access)
         grid.setColumnStretch(1, 1)
         form.addLayout(grid)
-        if not self.item.editable_access:
-            form.addWidget(label(tr("agents.newFormat") if self.item.section == agents.CURRENT else tr("agent.accessKept"), "hint", wrap=True))
+        if self.item.has_custom_access:
+            form.addWidget(label(tr("agent.accessKept"), "hint", wrap=True))
         form.addSpacing(6)
 
         # Who this agent may hand work to; only an agent that can be primary hands out work.
@@ -400,17 +398,15 @@ class AgentDialog(QDialog):
             description=self.description.text().strip(),
             prompt=self.prompt.toPlainText().strip(),
             disabled=self.disabled.isChecked(),
-            temperature=float(self.temperature.text().replace(",", ".")) if self.temperature.text().strip() else None,
             access={key: combo.currentData() for key, combo in self.access.items()},
             delegates=[name for name, check in self.delegates.items() if check.isChecked()] if self.limit.isChecked() else None,
             custom_task=item.custom_task,
-            section=item.section,
-            editable_access=item.editable_access,
+            steps=int(self.steps.text().strip()) if self.steps.text().strip() else None,
+            kept_rules=list(item.kept_rules),
         )
 
     def _accept(self) -> None:
         name = self.name.text().strip()
-        temperature = self.temperature.text().strip().replace(",", ".")
         if not name:
             self.status.setText(tr("agent.needName"))
         elif not agents.valid_name(name):
@@ -419,8 +415,8 @@ class AgentDialog(QDialog):
             self.status.setText(tr("error.agentExists", name=name))
         elif not self.description.text().strip():
             self.status.setText(tr("agent.needDescription"))
-        elif temperature and not (re.fullmatch(r"\d+(\.\d+)?", temperature) and float(temperature) <= 2):
-            self.status.setText(tr("agent.badTemperature"))
+        elif self.steps.text().strip() and not (self.steps.text().strip().isdigit() and int(self.steps.text()) >= 1):
+            self.status.setText(tr("agent.badSteps"))
         else:
             self.accept()
 

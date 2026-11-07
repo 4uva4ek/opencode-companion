@@ -125,18 +125,18 @@ def test_unreachable_server_reports_error():
 
 
 def test_diff_marks_new_configured_and_missing():
-    provider = Provider("p", "P", "provider", "http://h/v1", None, {"kept": {"name": "Kept"}, "gone": {}})
+    provider = Provider("p", "P", "http://h/v1", None, {"kept": {"name": "Kept"}, "gone": {}})
     rows = diff(provider, Discovery(ok=True, models=[RemoteModel(id="kept"), RemoteModel(id="fresh")]))
     assert [(row.id, row.status) for row in rows] == [("fresh", "new"), ("kept", "configured"), ("gone", "missing")]
 
 
 def test_diff_does_not_call_models_missing_when_server_is_down():
-    provider = Provider("p", "P", "provider", "http://h/v1", None, {"kept": {}})
+    provider = Provider("p", "P", "http://h/v1", None, {"kept": {}})
     rows = diff(provider, Discovery(ok=False, error="down"))
     assert [(row.id, row.status) for row in rows] == [("kept", "configured")]
 
 
 def test_config_tool_choice_wins_over_server():
-    provider = Provider("p", "P", "provider", "http://h/v1", None, {"m": {"tool_call": False}})
+    provider = Provider("p", "P", "http://h/v1", None, {"m": {"capabilities": {"tools": False}}})
     [row] = diff(provider, Discovery(ok=True, models=[RemoteModel(id="m", tools=True)]))
     assert row.in_config and row.tools is False

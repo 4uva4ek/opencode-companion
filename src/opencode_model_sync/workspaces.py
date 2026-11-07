@@ -199,18 +199,16 @@ def _columns(connection: sqlite3.Connection, table: str) -> set[str]:
 
 
 def _usage(connection: sqlite3.Connection) -> tuple[dict[str, int], dict[str, int]]:
-    """Read either session schema, preferring v2 when both exist after migration."""
-    for table in ("session_v2", "session"):
-        if not {"project_id", "directory"} <= _columns(connection, table):
-            continue
-        by_project = {row["project_id"]: row["total"] for row in connection.execute(
-            f"select project_id, count(*) as total from {table} group by project_id"
-        )}
-        by_directory = {normalize(row["directory"]): row["total"] for row in connection.execute(
-            f"select directory, count(*) as total from {table} group by directory"
-        ) if row["directory"]}
-        return by_project, by_directory
-    return {}, {}
+    """Read the v2 session table, or empty counts when the database predates it."""
+    if not {"project_id", "directory"} <= _columns(connection, "session_v2"):
+        return {}, {}
+    by_project = {row["project_id"]: row["total"] for row in connection.execute(
+        "select project_id, count(*) as total from session_v2 group by project_id"
+    )}
+    by_directory = {normalize(row["directory"]): row["total"] for row in connection.execute(
+        "select directory, count(*) as total from session_v2 group by directory"
+    ) if row["directory"]}
+    return by_project, by_directory
 
 
 def _rows(connection: sqlite3.Connection) -> list[Workspace]:
@@ -219,12 +217,10 @@ def _rows(connection: sqlite3.Connection) -> list[Workspace]:
     times = [name for name in ("time_active", "time_updated", "time_created") if name in columns]
     active = "coalesce(" + ", ".join([*times, "0"]) + ")" if times else "0"
     archived = "time_archived" if "time_archived" in columns else "null"
-    sandboxes = "sandboxes" if "sandboxes" in columns else "'[]'"
     can_archive = {"time_archived", "time_updated"} <= columns
     found: dict[str, Workspace] = {}
-    sandbox_rows: list[tuple[str, str]] = []
     for row in connection.execute(
-        f"select id, worktree, {active} as active, {archived} as archived, {sandboxes} as sandboxes from project"
+        f"select id, worktree, {active} as active, {archived} as archived from project"
     ):
         directory = str(row["worktree"])
         found[normalize(directory)] = Workspace(
@@ -236,12 +232,6 @@ def _rows(connection: sqlite3.Connection) -> list[Workspace]:
             active=int(row["active"]),
             can_remove=can_archive,
         )
-        try:
-            paths = json.loads(row["sandboxes"] or "[]")
-        except (ValueError, TypeError):
-            paths = []
-        if isinstance(paths, list):
-            sandbox_rows.extend((str(row["id"]), path) for path in paths if isinstance(path, str) and path)
     by_id = {item.project_id: item for item in found.values()}
     worktree_columns = _columns(connection, "worktree")
     if worktree_columns:
@@ -249,8 +239,8 @@ def _rows(connection: sqlite3.Connection) -> list[Workspace]:
         rows = connection.execute(f"select project_id, directory, {strategy} as strategy from worktree")
         trees = [(str(row["project_id"]), str(row["directory"]), row["strategy"], True) for row in rows]
     else:
-        # OpenCode 1.x keeps worktree paths in project.sandboxes, without a worktree table.
-        trees = [(ident, directory, "git", False) for ident, directory in sandbox_rows]
+        # A database without a worktree table has no worktrees to list.
+        trees = []
     for ident, directory, strategy, can_remove in trees:
         key = normalize(directory)
         if key in found:

@@ -358,7 +358,7 @@ def test_adding_hands_the_folder_to_the_running_opencode(monkeypatch, tmp_path):
 def view(tmp_path, monkeypatch):
     app = QApplication.instance() or QApplication([])
     config = tmp_path / "opencode.json"
-    config.write_text(json.dumps({"provider": {}}))
+    config.write_text(json.dumps({"providers": {}}))
     monkeypatch.setattr(window, "config_path", lambda: config)
     monkeypatch.setattr(window.MainWindow, "refresh", window.MainWindow._reload_config)
     monkeypatch.setenv("OPENCODE_MODEL_SYNC_STATE", str(tmp_path / "state.json"))
@@ -576,17 +576,13 @@ def v1_storage(tmp_path, monkeypatch):
     return database
 
 
-def test_v1_schema_lists_projects_sandboxes_and_session_counts_without_writes(v1_storage):
+def test_v1_database_lists_its_projects_with_empty_usage_and_no_writes(v1_storage):
+    """A v1 database is still listed, but its sessions and sandboxes are not read."""
     before = v1_storage.read_bytes()
     items, note = workspaces.list_workspaces(None)
-    assert len(items) == 2
-    by_path = {item.directory: item for item in items}
-    project = by_path["/Users/me/app"]
-    tree = by_path["/Users/me/.wt/feature"]
-    assert project.kind == workspaces.PROJECT and project.sessions == 1
-    assert tree.kind == workspaces.WORKTREE and tree.sessions == 2
-    assert tree.project_dir == project.directory
-    assert tree.strategy == "git"
+    assert [item.directory for item in items] == ["/Users/me/app"]
+    assert items[0].kind == workspaces.PROJECT
+    assert items[0].sessions == 0
     assert all(item.active == 30 and not item.archived and not item.can_remove for item in items)
     assert note == workspaces.tr("workspaces.note.database")
     assert v1_storage.read_bytes() == before
@@ -608,7 +604,7 @@ def test_v1_rows_allow_excluding_but_disable_unsupported_removal(v1_storage, vie
     widget, _, _ = view
     widget.ws_items = workspaces.list_from_database(v1_storage)
     widget.render_workspaces()
-    assert len(rows(widget)) == 2
+    assert len(rows(widget)) == 1
     for row in rows(widget):
         buttons = {button.text(): button for button in row.findChildren(QPushButton)}
         assert buttons[window.tr("ws.exclude")].isEnabled()
@@ -633,9 +629,9 @@ def test_missing_optional_timestamps_and_session_tables(tmp_path, time_columns, 
     assert not item.archived
 
 
-def test_v2_session_table_takes_precedence_after_migration(v1_storage):
+def test_a_v1_session_table_kept_alongside_is_not_read(v1_storage):
+    """v1 session rows sitting next to a v2 table are not read, so a project with none in v2 counts zero."""
     with sqlite3.connect(v1_storage) as connection:
         connection.execute("create table session_v2 (project_id text, directory text)")
-        connection.execute("insert into session_v2 values ('p1', '/Users/me/app')")
     project = next(item for item in workspaces.list_from_database(v1_storage) if item.kind == workspaces.PROJECT)
-    assert project.sessions == 1
+    assert project.sessions == 0

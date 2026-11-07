@@ -1,10 +1,9 @@
 """Agents in the opencode config, and building a team of one planner and several workers.
 
-opencode keeps agents in two maps, like providers. The legacy ``agent`` map has ``prompt``, ``disable``,
-``temperature`` and a ``permission`` object with ``edit``, ``bash``, ``webfetch`` and ``task`` keys. The
-current ``agents`` map has ``system``, ``disabled`` and an ordered ``permissions`` rule list. New agents
-go to the legacy map, whose shape the opencode docs describe. An agent already in the current map is
-edited there, but its rule list is kept as written.
+opencode keeps agents in the ``agents`` map: ``system`` carries the instructions, ``disabled``
+switches an agent off, and ``permissions`` is an ordered rule list where every rule names an action,
+a resource and an effect. This app manages the ``*`` rules of edit, bash, webfetch and task; rules
+it does not manage, or that a plain switch cannot spell, are kept exactly as written.
 """
 
 from __future__ import annotations
@@ -16,13 +15,13 @@ from typing import Any
 from .config import ConfigError, OpencodeConfig
 from .i18n import tr
 
-LEGACY = "agent"
-CURRENT = "agents"
+AGENTS = "agents"
 BUILT_IN = ("build", "plan", "general", "explore")
 BUILT_IN_SUBAGENTS = ("general", "explore")
 MODES = ("primary", "subagent", "all")
 ACCESS = ("allow", "ask", "deny")
-CUSTOM = "custom"  # a permission written as pattern rules, kept untouched
+CUSTOM = "custom"  # a rule a plain switch cannot spell; the switch waits, the rule stays
+# Actions this app shows as access switches.
 PERMISSIONS = ("edit", "bash", "webfetch")
 ROLES = ("coder", "tester", "reviewer", "researcher", "custom")
 # Edit and bash access per role; None leaves opencode's default.
@@ -33,8 +32,8 @@ ROLE_ACCESS = {
     "researcher": ("deny", "deny"),
     "custom": (None, None),
 }
-# Tool switches of the deprecated ``tools`` map that the edit and bash permissions replace.
-_OLD_TOOLS = {"write": "edit", "edit": "edit", "patch": "edit", "bash": "bash", "webfetch": "webfetch"}
+# Words of the old agent map; editing an agent replaces them with their ``agents`` spellings.
+SUPERSEDED = ("prompt", "disable", "temperature", "permission", "tools", "options", "maxSteps")
 
 
 @dataclass
@@ -45,18 +44,23 @@ class Agent:
     description: str = ""
     prompt: str = ""
     disabled: bool = False
-    temperature: float | None = None
     # "allow", "ask", "deny", CUSTOM, or None for opencode's default.
     access: dict[str, str | None] = field(default_factory=lambda: dict.fromkeys(PERMISSIONS))
     # Subagents this agent may hand work to; None means any.
     delegates: list[str] | None = None
     custom_task: bool = False
-    section: str = LEGACY
-    editable_access: bool = True
+    # Agentic iterations before opencode forces a text-only answer; None is its default.
+    steps: int | None = None
+    # Rules this app keeps as written: other actions, and managed ones spelled beyond a switch.
+    kept_rules: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def can_delegate(self) -> bool:
         return self.mode != "subagent"
+
+    @property
+    def has_custom_access(self) -> bool:
+        return any(value == CUSTOM for value in self.access.values())
 
 
 @dataclass
@@ -71,12 +75,8 @@ def valid_name(name: str) -> bool:
 
 
 def agents(config: OpencodeConfig) -> list[Agent]:
-    current = _as_object(config.data.get(CURRENT))
-    legacy = _as_object(config.data.get(LEGACY))
-    result = [_current(name, entry) for name, entry in current.items() if isinstance(entry, dict)]
-    result += [
-        _legacy(name, entry) for name, entry in legacy.items() if isinstance(entry, dict) and name not in current
-    ]
+    entries = _as_object(config.data.get(AGENTS))
+    result = [_agent(name, entry) for name, entry in entries.items() if isinstance(entry, dict)]
     order = {"primary": 0, "all": 1, "subagent": 2}
     return sorted(result, key=lambda agent: (order.get(agent.mode, 1), agent.name.lower()))
 
@@ -98,30 +98,28 @@ def save_agent(config: OpencodeConfig, item: Agent, previous: str | None = None)
     if item.name != previous and agent(config, item.name):
         raise ConfigError(tr("error.agentExists", name=item.name))
     old = agent(config, previous) if previous else None
-    section = old.section if old else LEGACY
-    entries = config.data.setdefault(section, {})
+    entries = config.data.setdefault(AGENTS, {})
     entry = dict(entries.pop(previous, {})) if old else {}
+    for key in SUPERSEDED:
+        entry.pop(key, None)
 
     _set(entry, "description", item.description.strip() or None)
     _set(entry, "mode", item.mode)
     _set(entry, "model", (item.model or "").strip() or None)
-    if section == LEGACY:
-        _set(entry, "prompt", item.prompt.strip() or None)
-        _set(entry, "disable", True if item.disabled else None)
-        _set(entry, "temperature", item.temperature)
-        if item.editable_access:
-            _write_permission(entry, item)
-    else:
-        _set(entry, "system", item.prompt.strip() or None)
-        _set(entry, "disabled", True if item.disabled else None)
+    _set(entry, "system", item.prompt.strip() or None)
+    _set(entry, "disabled", True if item.disabled else None)
+    _set(entry, "steps", item.steps)
+    _set(entry, "permissions", _permissions(item) or None)
     entries[item.name] = entry
     if previous and previous != item.name:
         _rename_references(config, previous, item.name)
 
 
 def remove_agent(config: OpencodeConfig, name: str) -> None:
-    for section in (CURRENT, LEGACY):
-        _as_object(config.data.get(section)).pop(name, None)
+    entries = _as_object(config.data.get(AGENTS))
+    entries.pop(name, None)
+    if not entries:
+        config.data.pop(AGENTS, None)
     _rename_references(config, name, None)
 
 
@@ -161,8 +159,12 @@ def save_team(config: OpencodeConfig, members: list[Agent], make_default: bool) 
     for member in members:
         existing = agent(config, member.name)
         if existing:
-            member.section = existing.section
-            member.editable_access = existing.editable_access
+            member.kept_rules = existing.kept_rules
+            member.custom_task = existing.custom_task
+            member.steps = existing.steps
+            for key, value in existing.access.items():
+                if value == CUSTOM:
+                    member.access[key] = CUSTOM
         save_agent(config, member, member.name if existing else None)
     if make_default:
         config.data["default_agent"] = members[0].name
@@ -173,41 +175,9 @@ def default_agent(config: OpencodeConfig) -> str | None:
     return value if isinstance(value, str) else None
 
 
-def _legacy(name: str, entry: dict[str, Any]) -> Agent:
-    permission = entry.get("permission")
-    editable = permission is None or isinstance(permission, dict)
-    permission = _as_object(permission)
-    access: dict[str, str | None] = {}
-    tools = _as_object(entry.get("tools"))
-    for key in PERMISSIONS:
-        value = permission.get(key)
-        if isinstance(value, str) and value in ACCESS:
-            access[key] = value
-        elif value is not None:
-            access[key] = CUSTOM
-        elif any(tools.get(tool) is False for tool, target in _OLD_TOOLS.items() if target == key):
-            access[key] = "deny"
-        else:
-            access[key] = None
-    delegates, custom_task = _read_task(permission.get("task"))
-    temperature = entry.get("temperature")
-    return Agent(
-        name=name,
-        mode=_mode(entry),
-        model=_model(entry.get("model")),
-        description=str(entry.get("description") or ""),
-        prompt=str(entry.get("prompt") or ""),
-        disabled=entry.get("disable") is True,
-        temperature=float(temperature) if isinstance(temperature, (int, float)) else None,
-        access=access,
-        delegates=delegates,
-        custom_task=custom_task,
-        section=LEGACY,
-        editable_access=editable,
-    )
-
-
-def _current(name: str, entry: dict[str, Any]) -> Agent:
+def _agent(name: str, entry: dict[str, Any]) -> Agent:
+    rules = [rule for rule in entry.get("permissions", []) if isinstance(rule, dict)] \
+        if isinstance(entry.get("permissions"), list) else []
     return Agent(
         name=name,
         mode=_mode(entry),
@@ -215,11 +185,63 @@ def _current(name: str, entry: dict[str, Any]) -> Agent:
         description=str(entry.get("description") or ""),
         prompt=str(entry.get("system") or ""),
         disabled=entry.get("disabled") is True,
-        access=dict.fromkeys(PERMISSIONS, CUSTOM if entry.get("permissions") else None),
-        custom_task=bool(entry.get("permissions")),
-        section=CURRENT,
-        editable_access=False,
+        steps=_steps(entry.get("steps")),
+        **_read_rules(rules),
     )
+
+
+def _steps(value: Any) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else None
+
+
+def _read_rules(rules: list[dict[str, Any]]) -> dict[str, Any]:
+    """Access switches and delegates out of a rule list; whatever a switch cannot spell is kept."""
+    access: dict[str, str | None] = {}
+    kept: list[dict[str, Any]] = []
+    for key in PERMISSIONS:
+        own = [rule for rule in rules if rule.get("action") == key]
+        plain = [rule for rule in own if rule.get("resource", "*") == "*" and rule.get("effect") in ACCESS]
+        if own and len(plain) == len(own):
+            access[key] = plain[-1]["effect"] if plain else None
+        else:
+            access[key] = CUSTOM if own else None
+            kept.extend(own)
+    delegates, custom_task = _read_task([rule for rule in rules if rule.get("action") == "task"])
+    if custom_task:
+        kept.extend(rule for rule in rules if rule.get("action") == "task")
+    kept.extend(rule for rule in rules if rule.get("action") not in (*PERMISSIONS, "task"))
+    return {"access": access, "delegates": delegates, "custom_task": custom_task, "kept_rules": kept}
+
+
+def _read_task(rules: list[dict[str, Any]]) -> tuple[list[str] | None, bool]:
+    """Task rules this app can show as a list of allowed subagents, or a flag that it cannot."""
+    if not rules:
+        return None, False
+    first = rules[0]
+    if first.get("resource", "*") != "*" or first.get("effect") != "deny":
+        return None, True
+    allowed = [rule.get("resource") for rule in rules[1:]]
+    if any(rule.get("effect") != "allow" or not isinstance(name, str) or not valid_name(name) for rule, name in zip(rules[1:], allowed)):
+        return None, True
+    return [name for name in allowed if isinstance(name, str)], False
+
+
+def _permissions(item: Agent) -> list[dict[str, Any]]:
+    """The managed rules of an agent, after the rules it carries untouched.
+
+    A switch moved off CUSTOM replaces the rules it used to shadow: for a managed action the switch's
+    word is the only one written.
+    """
+    spelled = {key for key in PERMISSIONS if item.access.get(key) in ACCESS}
+    rules = [rule for rule in item.kept_rules if rule.get("action") not in spelled]
+    for key in PERMISSIONS:
+        value = item.access.get(key)
+        if value in ACCESS:
+            rules.append({"action": key, "resource": "*", "effect": value})
+    if not item.custom_task and item.can_delegate and item.delegates is not None:
+        rules.append({"action": "task", "resource": "*", "effect": "deny"})
+        rules.extend({"action": "task", "resource": name, "effect": "allow"} for name in item.delegates)
+    return rules
 
 
 def _mode(entry: dict[str, Any]) -> str:
@@ -236,42 +258,23 @@ def _model(value: Any) -> str | None:
     return None
 
 
-def _read_task(value: Any) -> tuple[list[str] | None, bool]:
-    """A task permission this app can show as a list of allowed subagents, or a flag that it cannot."""
-    if value is None:
-        return None, False
-    if not isinstance(value, dict) or value.get("*") != "deny":
-        return None, True
-    allowed = [name for name, action in value.items() if name != "*"]
-    if any(value[name] != "allow" or not valid_name(name) for name in allowed):
-        return None, True
-    return allowed, False
-
-
-def _write_permission(entry: dict[str, Any], item: Agent) -> None:
-    permission = _as_object(entry.get("permission"))
-    for key in PERMISSIONS:
-        value = item.access.get(key)
-        if value != CUSTOM:
-            _set(permission, key, value)
-    if not item.custom_task:
-        delegates = item.delegates if item.can_delegate else None
-        _set(permission, "task", None if delegates is None else {"*": "deny", **dict.fromkeys(delegates, "allow")})
-    _set(entry, "permission", permission or None)
-    # The permission object replaces the deprecated tool switches; a leftover switch would contradict it.
-    tools = _as_object(entry.get("tools"))
-    for tool in _OLD_TOOLS:
-        tools.pop(tool, None)
-    _set(entry, "tools", tools or None)
-
-
 def _rename_references(config: OpencodeConfig, old: str, new: str | None) -> None:
-    for entry in _as_object(config.data.get(LEGACY)).values():
-        task = _as_object(_as_object(entry).get("permission")).get("task") if isinstance(entry, dict) else None
-        if isinstance(task, dict) and old in task:
-            action = task.pop(old)
-            if new:
-                task[new] = action
+    for entry in _as_object(config.data.get(AGENTS)).values():
+        if not isinstance(entry, dict):
+            continue
+        rules = entry.get("permissions")
+        if not isinstance(rules, list):
+            continue
+        if new is None:
+            # The agent is gone; a rule naming it could never match a task again.
+            kept = [rule for rule in rules
+                    if not (isinstance(rule, dict) and rule.get("action") == "task" and rule.get("resource") == old)]
+            if len(kept) != len(rules):
+                _set(entry, "permissions", kept or None)
+        else:
+            for rule in rules:
+                if isinstance(rule, dict) and rule.get("action") == "task" and rule.get("resource") == old:
+                    rule["resource"] = new
     if config.data.get("default_agent") == old:
         _set(config.data, "default_agent", new)
 

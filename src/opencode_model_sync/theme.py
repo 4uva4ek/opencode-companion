@@ -79,8 +79,9 @@ def current() -> Palette:
 
 
 def style_sheet(p: Palette, check: str) -> str:
-    from .icons import down_file
+    from .icons import dash_file, down_file
     arrow = down_file(p.muted)
+    dash = dash_file(p.muted)
     return f"""
 * {{
     font-size: 13px;
@@ -92,8 +93,8 @@ QMainWindow, #content {{ background: {p.window}; }}
 QToolTip {{ background: {p.surface}; color: {p.text}; border: 1px solid {p.border}; padding: 6px 8px; border-radius: 6px; }}
 
 /* The bar reaches one pixel past the bottom of the strip so the chosen tab can stand on it. */
-QTabBar#tabs {{ background: transparent; margin-bottom: -1px; }}
-QTabBar#tabs::tab {{
+QTabBar#tabs, QTabWidget > QTabBar {{ background: transparent; margin-bottom: -1px; }}
+QTabBar#tabs::tab, QTabWidget > QTabBar::tab {{
     background: transparent;
     color: {p.muted};
     border: 1px solid transparent;
@@ -101,9 +102,9 @@ QTabBar#tabs::tab {{
     padding: 7px 14px;
     font-weight: 600;
 }}
-QTabBar#tabs::tab:hover {{ color: {p.text}; background: {p.surface_hover}; }}
+QTabBar#tabs::tab:hover, QTabWidget > QTabBar::tab:hover {{ color: {p.text}; background: {p.surface_hover}; }}
 /* The chosen tab is outlined on three sides only: along the bottom it becomes the page under it. */
-QTabBar#tabs::tab:selected {{
+QTabBar#tabs::tab:selected, QTabWidget > QTabBar::tab:selected {{
     color: {p.text};
     background: {p.window};
     border: 1px solid {p.border};
@@ -114,6 +115,13 @@ QTabBar#tabs::tab:selected {{
     border-bottom-right-radius: 0px;
     padding-bottom: 8px;
 }}
+
+/* Tabs that divide one window rather than the whole app wear the same pills as the strip above.
+   The frame is only the line they stand on, and it runs from edge to edge as the strip's line does;
+   the chosen tab is the same colour as the page, so it merges into it. The bar alone steps back
+   inside, by the room the dialog keeps at its sides, so no tab sits on the corner of the window. */
+QTabWidget::pane {{ border: none; border-top: 1px solid {p.border}; background: transparent; }}
+QTabWidget::tab-bar {{ left: 18px; }}
 
 #brand {{ font-size: 16px; font-weight: 700; }}
 #brandSub {{ color: {p.faint}; font-size: 12px; }}
@@ -163,16 +171,37 @@ QPushButton#link:hover {{ color: {p.accent_hover}; text-decoration: underline; }
 
 QCheckBox::indicator {{ width: 16px; height: 16px; border-radius: 4px; border: 1px solid {p.faint}; background: transparent; }}
 QCheckBox::indicator:checked {{ background: {p.accent}; border-color: {p.accent}; image: url({check}); }}
+/* A dash, not an empty box: the third state says the config never chose, which is its own answer. */
+QCheckBox::indicator:indeterminate {{ border-color: {p.muted}; image: url({dash}); }}
 QCheckBox::indicator:disabled {{ border-color: {p.border}; }}
+
+/* A slider is a range made visible: the groove is the whole of it, the filled part says how far
+   along the value sits, and the two ends are printed beside it as words. The groove is painted in
+   the faintest ink the palette has, because a range nobody can see cannot be aimed at. The handle
+   is wider than the groove it rides, so the control keeps a little room at its own sides: without
+   it the handle at the first or the last step hangs past the widget and is drawn in half. */
+QSlider {{ background: transparent; padding: 0 8px; }}
+QSlider::groove:horizontal {{ height: 4px; border: none; border-radius: 2px; background: {p.faint}; }}
+QSlider::sub-page:horizontal {{ height: 4px; border-radius: 2px; background: {p.accent}; }}
+QSlider::add-page:horizontal {{ height: 4px; border-radius: 2px; background: {p.faint}; }}
+QSlider::handle:horizontal {{
+    width: 14px;
+    height: 14px;
+    margin: -5px -7px;
+    border: none;
+    border-radius: 7px;
+    background: {p.text};
+}}
+QSlider::handle:horizontal:hover {{ background: {p.accent_hover}; }}
+/* A field left to the provider is greyed, but the range it would have used stays readable: the
+   groove darkens and the handle keeps a colour of its own instead of vanishing into it. */
+QSlider::groove:horizontal:disabled, QSlider::add-page:horizontal:disabled,
+QSlider::sub-page:horizontal:disabled {{ background: {p.border}; }}
+QSlider::handle:horizontal:disabled {{ background: {p.muted}; }}
 
 #pill {{ border-radius: 9px; padding: 2px 9px; font-size: 11px; font-weight: 600; }}
 QPushButton#pill {{ border: 1px solid transparent; }}
 QPushButton#pill:hover {{ border-color: {p.faint}; }}
-QPushButton#modelToggle {{ border-radius: 9px; padding: 4px 9px; font-size: 11px;
-    color: {p.muted}; background: {p.surface_hover}; border: 1px solid {p.border}; }}
-QPushButton#modelToggle:checked {{ color: {p.accent}; background: {p.accent_soft}; border-color: {p.accent}; }}
-QPushButton#modelToggle:hover {{ border-color: {p.accent}; }}
-QPushButton#modelToggle:disabled {{ color: {p.faint}; border-color: {p.border}; }}
 #pill[tone="accent"] {{ color: {p.accent}; background: {p.accent_soft}; }}
 #pill[tone="success"] {{ color: {p.success}; background: {p.success_soft}; }}
 #pill[tone="warning"] {{ color: {p.warning}; background: {p.warning_soft}; }}
@@ -210,6 +239,9 @@ QLineEdit {{
 }}
 QLineEdit:focus {{ border-color: {p.accent}; }}
 QLineEdit:disabled {{ color: {p.faint}; }}
+/* There is deliberately no QSpinBox rule here. A spin box takes its digits from its own palette,
+   which a style sheet does not move, so a dark field came out with black ink in it. The fields of
+   this app are line edits, and window.CountField is the one of them that holds a number. */
 QPlainTextEdit {{
     background: {p.surface};
     border: 1px solid {p.border};

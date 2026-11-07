@@ -17,15 +17,21 @@ UI = {
     "up": ("Move up", "Выше"), "down": ("Move down", "Ниже"), "cancel": ("Cancel", "Отмена"),
     "apply": ("Apply to draft", "Внести в черновик"), "save": ("Save", "Сохранить"),
     "discard": ("Discard changes", "Отменить изменения"), "refresh": ("Refresh", "Обновить"),
+    "reset": ("Reset config", "Сбросить конфиг"),
+    "resetTitle": ("Reset the configuration?", "Сбросить конфигурацию?"),
+    "resetConfirm": ("Replace {file} with an empty config? The current file is kept beside it as a backup first. "
+                     "opencode falls back to its defaults, and every setting this file holds goes with it — "
+                     "the way out when the file and the editors cannot agree.",
+                     "Заменить {file} пустым конфигом? Текущий файл сначала сохранится рядом как резервная копия. "
+                     "opencode вернётся к настройкам по умолчанию, и все настройки этого файла уйдут вместе с ним — "
+                     "выход, когда файл и редакторы не могут договориться."),
     "all": ("All settings", "Все настройки"), "general": ("General", "Основные"),
     "models": ("Models and providers", "Модели и провайдеры"), "agents": ("Agents and commands", "Агенты и команды"),
     "context": ("Context and limits", "Контекст и лимиты"), "workspace": ("Files and development", "Файлы и разработка"),
     "sources": ("Instructions and sources", "Инструкции и источники"),
     "integrations": ("Plugins and web search", "Плагины и веб-поиск"),
     "permissions": ("Permissions and policies", "Разрешения и политики"),
-    "experimental": ("Experimental", "Экспериментальные"), "legacy": ("Compatibility (V1)", "Совместимость (V1)"),
-    "legacyHint": ("Older configuration names. Prefer their V2 equivalents for new settings; existing values are preserved.",
-                   "Старые имена параметров. Для новых настроек используйте варианты V2; существующие значения сохраняются."),
+    "experimental": ("Experimental", "Экспериментальные"),
     "inheritHint": ("No value is written to this file. OpenCode inherits another configuration value or its own default.",
                     "Значение не записывается в этот файл. OpenCode наследует его из другой конфигурации либо использует своё значение по умолчанию."),
     "scope": ("Project and managed settings can override this file. Changes are written only after Save.",
@@ -48,8 +54,6 @@ UI = {
                    "Данные JSON, специфичные для провайдера или плагина. Их структуру определяет соответствующая интеграция."),
     "order": ("Order is preserved. For permission rules the last matching rule wins.",
               "Порядок сохраняется. Для правил разрешений действует последнее совпавшее правило."),
-    "restart": ("Restart the OpenCode server after saving these startup settings (Desktop too if it owns the server). Nothing is restarted automatically.",
-                "После сохранения этих параметров запуска перезапустите сервер OpenCode (и Desktop, если сервер запущен им). Автоматического перезапуска не будет."),
     "session": ("Applies when selecting an agent/model or starting a new session; existing sessions keep their selection.",
                 "Применяется при выборе агента/модели или создании новой сессии; существующие сессии сохраняют свой выбор."),
     "terminal": ("New terminals and shell executions use the new shell. Already running processes are unchanged.",
@@ -224,6 +228,13 @@ batch_tool|Batch tool|Пакетный инструмент|Expose the legacy ba
 openTelemetry|OpenTelemetry|OpenTelemetry|Emit telemetry spans for AI SDK requests.|Создание записей трассировки для запросов AI SDK.
 primary_tools|Primary-only tools|Инструменты основного агента|Tools restricted to primary agents.|Инструменты, доступные только основным агентам.
 continue_loop_on_deny|Continue after denial|Продолжать после запрета|Continue the agent loop after a tool request is denied.|Продолжать работу агента после запрета вызова инструмента.
+topP|Nucleus sampling (top P)|Ядерная выборка (top P)|Keep the smallest set of tokens whose probabilities add up to this value.|Оставлять минимальный набор токенов, чьи вероятности дают эту сумму.
+topK|Top-K sampling|Отбор top K|Only the K most likely tokens are considered at each step.|На каждом шаге рассматриваются только K самых вероятных токенов.
+presencePenalty|Presence penalty|Штраф за присутствие|Subtract from the score of tokens that already appeared in the text.|Вычитать из веса токенов, которые уже встречались в тексте.
+frequencyPenalty|Frequency penalty|Штраф за частоту|Subtract from the score of tokens in proportion to how often they appeared.|Вычитать из веса токенов пропорционально тому, как часто они встречались.
+maxOutputTokens|Maximum output tokens|Максимум токенов ответа|Largest number of tokens a single answer may produce.|Наибольшее число токенов, которое может выдать один ответ.
+seed|Random seed|Зерно генератора|A fixed seed makes the answer reproducible where the server supports it.|Фиксированное зерно делает ответ воспроизводимым, если сервер это поддерживает.
+stopSequences|Stop sequences|Останавливающие последовательности|Generation stops as soon as one of these strings appears.|Генерация прекращается, как только появляется одна из этих строк.
 """
 FIELDS = {}
 for _line in _FIELDS.strip().splitlines():

@@ -6,7 +6,7 @@ from copy import deepcopy
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import pytest
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QMessageBox
 from opencode_model_sync import settings, i18n, window
 from opencode_model_sync.config import ConfigError, strip_jsonc
 from opencode_model_sync.settings import MISSING
@@ -36,7 +36,8 @@ def type_text(control, text):
 
 def test_complete_schema_and_local_references():
     schema = settings.schema()
-    assert len(set(schema["properties"]) - set(schema["x-legacy"])) == 29
+    assert len(schema["properties"]) == 29
+    assert "x-legacy" not in schema
     assert {field.path[0] for field in settings.fields()} == set(schema["properties"])
     def walk(node):
         if isinstance(node, dict):
@@ -165,17 +166,17 @@ def test_drafts_survive_language_refresh_and_external_writes(app, tmp_path):
     panel.deleteLater()
 
 
-def test_restart_notice_before_and_after_save(app, tmp_path):
+def test_session_notice_before_and_after_save(app, tmp_path):
     path = tmp_path / "opencode.json"
     path.write_text('{}')
     panel = SettingsPanel(path)
-    control = panel.rows[("server", "port")].control
+    control = panel.rows[("model",)].control
     control.mode.setCurrentIndex(1)
-    type_text(control, "4096")
-    assert "restart" in panel.notice_keys
+    type_text(control, "anthropic/claude-x")
+    assert "session" in panel.notice_keys
     panel.save()
-    assert panel.status_key == "saved" and "restart" in panel.notice_keys
-    assert json.loads(path.read_text()) == {"server": {"port": 4096}}
+    assert panel.status_key == "saved" and "session" in panel.notice_keys
+    assert json.loads(path.read_text()) == {"model": "anthropic/claude-x"}
     panel.deleteLater()
 
 
@@ -211,6 +212,60 @@ def test_save_error_keeps_draft(app, tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "save", fail)
     panel.save()
     assert panel.dirty and panel.status_key == "failed" and path.read_text() == '{}'
+    panel.deleteLater()
+
+
+def test_resetting_the_config_keeps_a_backup_and_reload(app, tmp_path, monkeypatch):
+    path = tmp_path / "opencode.json"
+    path.write_text('{"model":"stale/one","username":"owner"}')
+    panel = SettingsPanel(path)
+    emitted = []
+    panel.saved.connect(lambda: emitted.append(True))
+    choose(panel.rows[("share",)].control, "literal", "disabled")
+    assert panel.reset_button.text() == "Reset config"
+    answers = []
+
+    def ask(parent, title, text, buttons, default):
+        answers.append((title, text, default))
+        return QMessageBox.StandardButton.Yes
+
+    monkeypatch.setattr(QMessageBox, "warning", staticmethod(ask))
+    panel.reset()
+    assert json.loads(path.read_text()) == {}
+    assert not panel.dirty and panel.status_key == "saved" and not panel.notice_keys
+    assert emitted == [True]
+    assert answers[0][1].startswith("Replace opencode.json")
+    backups = sorted(tmp_path.glob("opencode.json.bak-model-sync-*"))
+    assert len(backups) == 1
+    assert backups[0].read_text() == '{"model":"stale/one","username":"owner"}'
+    # The new empty file is what the panel shows now, not the one it started from.
+    assert panel.base == {}
+    panel.deleteLater()
+
+
+def test_declining_a_reset_and_a_failing_one_keep_the_file(app, tmp_path, monkeypatch):
+    path = tmp_path / "opencode.json"
+    path.write_text('{"model":"keep/me"}')
+    panel = SettingsPanel(path)
+    monkeypatch.setattr(QMessageBox, "warning",
+                        staticmethod(lambda *a: QMessageBox.StandardButton.No))
+    panel.reset()
+    assert path.read_text() == '{"model":"keep/me"}'
+    assert not list(tmp_path.glob("*.bak-model-sync-*"))
+    mcp = SettingsPanel(path, mcp=True)
+    assert mcp.reset_button is None, "one page owns the way out"
+    mcp.deleteLater()
+
+    choose(panel.rows[("share",)].control, "literal", "disabled")
+    monkeypatch.setattr(QMessageBox, "warning",
+                        staticmethod(lambda *a: QMessageBox.StandardButton.Yes))
+
+    def fail(*a): raise OSError("read-only")
+
+    monkeypatch.setattr(settings, "reset", fail)
+    panel.reset()
+    assert panel.status_key == "failed" and panel.dirty
+    assert path.read_text() == '{"model":"keep/me"}'
     panel.deleteLater()
 
 

@@ -23,8 +23,27 @@ def scrolled(widget: QWidget) -> QScrollArea:
     return scroll
 
 
+class WrappedLabel(QLabel):
+    """A label that keeps every line its text needs.
+
+    A layout asks a wrapping label how tall it would like to be before it has decided how wide the
+    label will be, so the answer comes back as one line and the second line is painted below the
+    widget's bottom edge — out of sight, with the word cut in half. This label answers once the
+    width is known instead and raises its own floor to the height the words take, so the row it
+    stands in grows rather than losing the end of the sentence.
+    """
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        # An empty label answers "no height at all", and a negative minimum is not a thing: only a
+        # real number of lines is worth raising the floor to.
+        needed = self.heightForWidth(self.width())
+        if needed > 0 and needed != self.minimumHeight():
+            self.setMinimumHeight(needed)
+
+
 def label(text: str = "", name: str | None = None, wrap: bool = False) -> QLabel:
-    widget = QLabel(text)
+    widget = WrappedLabel(text) if wrap else QLabel(text)
     if name:
         widget.setObjectName(name)
     widget.setWordWrap(wrap)

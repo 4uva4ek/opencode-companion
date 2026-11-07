@@ -19,10 +19,22 @@ _PATHS = {
     "trash": '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>',
     "folder": '<path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2h8.5A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/>',
     "check": '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+    # The third state of a check box: neither a mark nor a blank, but a word left unsaid.
+    "dash": '<path d="M7 12h10"/>',
     "users": '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/>'
     '<path d="M15.5 4.7a3.5 3.5 0 0 1 0 6.6"/><path d="M18 14.3a6.5 6.5 0 0 1 3.5 5.7"/>',
     "server":'<rect x="4" y="4" width="16" height="7" rx="2"/><rect x="4" y="13" width="16" height="7" rx="2"/>'
     '<path d="M8 7.5h.01M8 16.5h.01"/>',
+    # Feather's "settings": the gear the model row ends with, drawn in the same 24-unit grid.
+    "gear": '<circle cx="12" cy="12" r="3"/>'
+    '<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 '
+    '1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 1 9 '
+    '19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 '
+    '.33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 1 4.6 9a1.65 1.65 '
+    '0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 '
+    '1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 '
+    '1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 '
+    '0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
 }
 
 _LOGO = """
@@ -82,6 +94,14 @@ def check_file(color: str) -> str:
     """Style sheets take images by path, so the checkmark is written to a temp file once."""
     path = Path(tempfile.gettempdir()) / f"opencode-model-sync-check-{color.strip('#')}.svg"
     path.write_text(svg("check", color, 3.0), encoding="utf-8")
+    return path.as_posix()
+
+
+@cache
+def dash_file(color: str) -> str:
+    """The dash a check box shows when the config never chose one way or the other."""
+    path = Path(tempfile.gettempdir()) / f"opencode-model-sync-dash-{color.strip('#')}.svg"
+    path.write_text(svg("dash", color, 3.0), encoding="utf-8")
     return path.as_posix()
 
 

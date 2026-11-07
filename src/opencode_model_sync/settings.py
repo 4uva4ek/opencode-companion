@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import tempfile
 import time
 
@@ -42,6 +43,16 @@ def resolve(info: dict) -> dict:
     return {**resolve(schema()["$defs"][key]), **{k: v for k, v in info.items() if k != "$ref"}}
 
 
+def model_schema() -> dict:
+    """The node that describes one entry of ``providers.<id>.models.<model>``.
+
+    A model editor built on this node lists what opencode reads rather than what this app guesses.
+    """
+    provider = resolve(schema()["properties"]["providers"]["additionalProperties"])
+    models = resolve(provider["properties"]["models"])
+    return resolve(models["additionalProperties"])
+
+
 @dataclass(frozen=True)
 class Field:
     path: tuple[str, ...]
@@ -63,7 +74,7 @@ def fields() -> list[Field]:
         else:
             result.append(Field(path, info, category))
     for name, info in schema()["properties"].items():
-        category = next((key for key, names in CATEGORIES.items() if name in names), "legacy")
+        category = next((key for key, names in CATEGORIES.items() if name in names), "general")
         visit((name,), info, category)
     return result
 
@@ -124,13 +135,11 @@ def variants(info: dict) -> list[dict]:
 
 def effect(path: tuple[str, ...]) -> str:
     root = path[0]
-    if root in ("server", "logLevel"):
-        return "restart"
-    if root in ("model", "default_agent", "agents", "agent", "mode", "small_model", "commands", "command"):
+    if root in ("model", "default_agent", "agents", "small_model", "commands"):
         return "session"
     if root == "shell":
         return "terminal"
-    if root in ("mcp", "lsp", "formatter", "plugins", "plugin", "references", "reference"):
+    if root in ("mcp", "lsp", "formatter", "plugins", "references"):
         return "services"
     return "live"
 
@@ -253,6 +262,22 @@ def patch_text(text: str, target: dict) -> str:
     if not equal(json.loads(strip_jsonc(text)), target):
         raise ConfigError("JSONC patch verification failed")
     return text
+
+
+def reset(path: Path) -> None:
+    """Empty the config, its old bytes kept beside it: the way out when the file and the editors disagree."""
+    if path.exists():
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        shutil.copy2(path, path.with_name(f"{path.name}.bak-model-sync-{stamp}"))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle, temporary = tempfile.mkstemp(dir=path.parent, prefix=".model-sync-reset-", suffix=".tmp")
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8", newline="") as file:
+            file.write("{}\n")
+        os.replace(temporary, path)
+    except BaseException:
+        Path(temporary).unlink(missing_ok=True)
+        raise
 
 
 def save(path: Path, base: dict, changes: dict[tuple[str, ...], object]) -> dict:

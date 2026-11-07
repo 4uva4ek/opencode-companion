@@ -7,7 +7,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QComboBox, QDialog, QDialogButtonBox, QFrame, QHBoxLayout, QInputDialog,
+    QComboBox, QDialog, QDialogButtonBox, QFrame, QGridLayout, QHBoxLayout, QInputDialog,
     QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPlainTextEdit,
     QPushButton, QScrollArea, QVBoxLayout, QWidget,
 )
@@ -191,17 +191,26 @@ class FieldRow(QFrame):
         super().__init__()
         self.setObjectName("settingRow")
         self.path, self.info = path, info
-        self.title = label("", "fieldLabel")
-        self.key_label = label(".".join(str(p) for p in path), "hint")
-        self.key_label.setWordWrap(True)
-        self.title.setWordWrap(True)
+        self.title = label("", "fieldLabel", wrap=True)
+        self.key_label = label(".".join(str(p) for p in path), "hint", wrap=True)
         self.control = ValueControl(info, value, path, optional=optional, suggestions=suggestions)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(14, 10, 14, 12)
         layout.setSpacing(5)
-        heading = QHBoxLayout()
-        heading.addWidget(self.title, 1)
-        heading.addWidget(self.key_label, 1, Qt.AlignmentFlag.AlignRight)
+        # The path of a nested field is one long word, and it breaks wherever it has to. Two things
+        # keep it whole. The words line themselves up inside the cell the grid hands them, so a label
+        # is as wide as its half of the row instead of as wide as one line of text; and a wrapping
+        # label raises its own floor to the height the broken word needs, so the card grows deeper
+        # rather than drawing the second line past its own edge, out of sight.
+        self.title.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        self.key_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)
+        heading = QGridLayout()
+        heading.setContentsMargins(0, 0, 0, 0)
+        heading.setSpacing(8)
+        heading.addWidget(self.title, 0, 0)
+        heading.addWidget(self.key_label, 0, 1)
+        heading.setColumnStretch(0, 5)
+        heading.setColumnStretch(1, 7)
         layout.addLayout(heading)
         layout.addWidget(self.control)
         self.retranslate()
@@ -342,6 +351,7 @@ class ValueDialog(QDialog):
         area.setWidgetResizable(True)
         body = QWidget()
         content = QVBoxLayout(body)
+        self.content = content
         content.setContentsMargins(0, 0, 0, 0)
         area.setWidget(body)
         layout.addWidget(area, 1)
@@ -377,6 +387,7 @@ class ValueDialog(QDialog):
         self.error = label("", "error", wrap=True)
         layout.addWidget(self.error)
         buttons = QHBoxLayout()
+        self.actions = buttons
         buttons.addStretch(1)
         cancel = button(t("cancel"), "ghost")
         cancel.clicked.connect(self.reject)
@@ -385,6 +396,9 @@ class ValueDialog(QDialog):
         buttons.addWidget(cancel)
         buttons.addWidget(accept)
         layout.addLayout(buttons)
+
+    def extend(self, result):
+        """A subclass with rows of its own merges them in here, before the result is validated."""
 
     def finish(self):
         try:
@@ -396,6 +410,7 @@ class ValueDialog(QDialog):
                 for key, control in self.rows.items():
                     value = control.value()
                     if value is not MISSING: result[key] = value
+                self.extend(result)
             errors = settings.validation_errors(result, self.info)
             if errors: raise ValueError("; ".join(errors[:4]))
         except (ValueError, TypeError) as error:
@@ -441,6 +456,10 @@ class SettingsPanel(QWidget):
         self.discard_button.clicked.connect(self.discard)
         self.refresh_button = button("", icon_name="refresh")
         self.refresh_button.clicked.connect(self.refresh_clicked)
+        # The way out lives on the settings page alone; the MCP page edits the same file.
+        self.reset_button = None if mcp else button("", "ghost", "trash")
+        if self.reset_button:
+            self.reset_button.clicked.connect(self.reset)
         self.empty = label("", "hint")
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
@@ -498,6 +517,7 @@ class SettingsPanel(QWidget):
         layout.addWidget(self.scope)
         layout.addWidget(self.notice)
         footer = QHBoxLayout()
+        if self.reset_button: footer.insertWidget(0, self.reset_button)
         footer.addWidget(self.status, 1)
         footer.addWidget(self.discard_button)
         footer.addWidget(self.save_button)
@@ -545,6 +565,9 @@ class SettingsPanel(QWidget):
         self.save_button.setText(t("save"))
         self.discard_button.setText(t("discard"))
         self.refresh_button.setText(t("refresh"))
+        if self.reset_button:
+            self.reset_button.setText(t("reset"))
+            self.reset_button.setToolTip(t("resetConfirm", file=self.path.name))
         self.empty.setText(t("empty"))
         selected = self.categories.currentItem().data(Qt.ItemDataRole.UserRole) if self.categories.currentItem() else "general"
         self.categories.blockSignals(True)
@@ -575,7 +598,7 @@ class SettingsPanel(QWidget):
         words = self.search.text().casefold().split()
         item = self.categories.currentItem()
         category = item.data(Qt.ItemDataRole.UserRole) if item else "all"
-        self.scope.setText(t("scope") + ("\n" + t("legacyHint") if category == "legacy" else ""))
+        self.scope.setText(t("scope"))
         count = 0
         for spec in self.specs:
             row = self.rows.get(spec.path)
@@ -665,5 +688,24 @@ class SettingsPanel(QWidget):
             self.reload(force=True)
             self.status_key, self.status_values = "saved", {}
             self.notice_keys = effects
+            self.saved.emit()
+        self._show_status()
+
+    def reset(self):
+        """Empty the file and start over: the draft, the conflicts and the stale keys included."""
+        answer = QMessageBox.warning(
+            self, t("resetTitle"), t("resetConfirm", file=self.path.name),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No)
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            settings.reset(self.path)
+        except OSError as error:
+            self.status_key, self.status_values = "failed", {"error": str(error)}
+        else:
+            self.reload(force=True)
+            self.status_key, self.status_values = "saved", {}
+            self.notice_keys = []
             self.saved.emit()
         self._show_status()
