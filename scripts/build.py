@@ -145,6 +145,21 @@ def archive_macos(app: Path, archive: Path) -> None:
         )
 
 
+def write_checksum(archive: Path) -> Path:
+    """The archive's digest, in the form every checksum tool on every system reads.
+
+    Written as bytes on purpose. Text mode on Windows turns the line feed into CRLF, and the verifier
+    then goes looking for a file whose name ends in a carriage return - it reports the published
+    archive as missing, although the digits beside it are right. The 0.7.1 Windows archive shipped
+    with exactly that file.
+    """
+    with archive.open("rb") as stream:
+        digest = hashlib.file_digest(stream, "sha256").hexdigest()
+    path = archive.with_name(archive.name + ".sha256")
+    path.write_bytes(f"{digest}  {archive.name}\n".encode("ascii"))
+    return path
+
+
 def main() -> None:
     if sys.platform == "win32":
         os.environ["PATH"] = build_environment()["PATH"]
@@ -214,11 +229,7 @@ def main() -> None:
         with tarfile.open(archive, "w:gz") as tar:
             tar.add(dist / NAME, arcname=SLUG)
     archive_path = Path(archive)
-    with archive_path.open("rb") as stream:
-        digest = hashlib.file_digest(stream, "sha256").hexdigest()
-    archive_path.with_name(archive_path.name + ".sha256").write_text(
-        f"{digest}  {archive_path.name}\n", encoding="ascii"
-    )
+    write_checksum(archive_path)
     print(f"built {archive_path.name} for {version}")
 
 

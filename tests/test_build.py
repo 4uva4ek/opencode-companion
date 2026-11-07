@@ -1,6 +1,7 @@
 """Exercise macOS release packaging with real directory and file symlinks."""
 
 import importlib.util
+import hashlib
 import os
 import plistlib
 import shutil
@@ -53,6 +54,17 @@ def test_a_built_bundle_carries_the_number_the_release_is_named_by(tmp_path):
     assert info["CFBundleShortVersionString"] == build.released_version()
     assert info["CFBundleVersion"] == build.released_version()
     assert info["CFBundleExecutable"] == "example", "nothing else in the plist may move"
+
+
+def test_the_checksum_file_names_the_archive_the_way_a_verifier_reads_it(tmp_path):
+    """A line feed here is not style: on Windows it became part of the named file's spelling."""
+    archive = tmp_path / "app.zip"
+    archive.write_bytes(b"contents")
+    said = build.write_checksum(archive)
+    written = said.read_bytes()
+    assert b"\r" not in written, "a carriage return is read as the last letter of the file's name"
+    digest = hashlib.sha256(b"contents").hexdigest()
+    assert written == f"{digest}  app.zip\n".encode("ascii")
 
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="Requires macOS ditto and codesign")
