@@ -400,6 +400,7 @@ class ParamField(QWidget):
     END_ROOM = 36    # one bound printed beside the slider
     SLIDE_ROOM = 120  # a handle is worth nothing on a groove nobody can aim at
     NUMBER_ROOM = 100  # the number itself, right aligned so the digits of the rows line up
+    NUMBER_EDGE = 20   # room beside the digits for the cursor and the frame, measured from the font
 
     def __init__(self, key: str, info: dict, value, path: tuple, parent=None) -> None:
         super().__init__(parent)
@@ -476,8 +477,14 @@ class ParamField(QWidget):
         box.addWidget(self.range_label, 1)
 
         self.text = QLineEdit()
-        self.text.setFixedWidth(self.NUMBER_ROOM)
         self.text.setAlignment(Qt.AlignmentFlag.AlignRight)
+        # The field belongs to the biggest number it can be asked for, not to an average one: the
+        # seed alone reaches 2 147 483 647, eleven characters of the machine's own interface font.
+        # A remembered room of 100 looked right on this Mac and cut that number off on Windows,
+        # where the font is wider, so the room is measured off the font and still fixed: seven rows
+        # line up in columns only while every one of them hands the same width to the same column.
+        self.text.setFixedWidth(max(self.NUMBER_ROOM, self.text.fontMetrics().horizontalAdvance(
+            str(-MAX_SEED)) + self.NUMBER_EDGE))
         if self.whole:
             bounds = QIntValidator(int(self.low), int(self.high), self)
         else:

@@ -12,11 +12,13 @@ import os
 import hashlib
 import json
 import platform
+import plistlib
 import shutil
 import subprocess
 import sys
 import tarfile
 import tempfile
+import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -92,6 +94,35 @@ def target() -> str:
     return f"{system}-{arch}"
 
 
+def released_version() -> str:
+    """The number the release is named by, taken from the file that decides it."""
+    with (ROOT / "pyproject.toml").open("rb") as stream:
+        return tomllib.load(stream)["project"]["version"]
+
+
+def stamp_version(app: Path, version: str) -> None:
+    """Write the release number into the bundle, where macOS reads it back.
+
+    PyInstaller is told the app's name, icon and identifier but never its number, so a finished
+    bundle says 0.0.0: the About panel, `defaults read` of an installed copy and any comparison
+    against a published release all read a version that was never released. Both keys are written,
+    because macOS shows the first and version comparisons elsewhere read the second.
+    """
+    info = app / "Contents" / "Info.plist"
+    with info.open("rb") as stream:
+        data = plistlib.load(stream)
+    data["CFBundleShortVersionString"] = version
+    data["CFBundleVersion"] = version
+    with info.open("wb") as stream:
+        plistlib.dump(data, stream)
+
+
+def resign_macos(app: Path) -> None:
+    """Sign the bundle again, badly on purpose: writing into it broke the signature PyInstaller put
+    on it, and an ad-hoc signature is what a build made on a machine nobody owns can honestly have."""
+    subprocess.run(["codesign", "--force", "--sign", "-", str(app)], check=True)
+
+
 def archive_macos(app: Path, archive: Path) -> None:
     """Preserve bundle symlinks and verify the archive users will download."""
     subprocess.run(
@@ -156,11 +187,19 @@ def main() -> None:
         env=build_environment(),
     )
 
+    version = released_version()
     if sys.platform == "win32":
         validate_windows_qt(dist / NAME)
         smoke_app(dist / NAME / f"{NAME}.exe", ROOT / "build")
     elif sys.platform == "darwin":
-        smoke_app(dist / f"{NAME}.app" / "Contents" / "MacOS" / NAME, ROOT / "build")
+        app = dist / f"{NAME}.app"
+        # PyInstaller never hears the number, so the finished bundle would say 0.0.0: the About
+        # panel of an installed copy, `defaults read`, and anyone comparing an installed app with a
+        # published release would all read a version that was never released. Writing the plist
+        # invalidates the signature PyInstaller put on it, so it gets signed again afterwards.
+        stamp_version(app, version)
+        resign_macos(app)
+        smoke_app(app / "Contents" / "MacOS" / NAME, ROOT / "build")
     else:
         smoke_app(dist / NAME / NAME, ROOT / "build")
 
@@ -180,7 +219,7 @@ def main() -> None:
     archive_path.with_name(archive_path.name + ".sha256").write_text(
         f"{digest}  {archive_path.name}\n", encoding="ascii"
     )
-    print(f"built {archive}")
+    print(f"built {archive_path.name} for {version}")
 
 
 if __name__ == "__main__":

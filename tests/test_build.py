@@ -2,6 +2,7 @@
 
 import importlib.util
 import os
+import plistlib
 import shutil
 import subprocess
 import sys
@@ -37,6 +38,21 @@ def test_windows_bundle_rejects_wrong_icu_even_when_filename_matches(tmp_path):
     shutil.copyfile(Path(sys.base_prefix) / "python3.dll", target.parent / "icuuc.dll")
     with pytest.raises(RuntimeError, match="Incompatible ICU"):
         build.validate_windows_qt(tmp_path)
+
+
+def test_a_built_bundle_carries_the_number_the_release_is_named_by(tmp_path):
+    """PyInstaller is never told the version, so the finished bundle has to be told afterwards."""
+    contents = (tmp_path / "Example.app" / "Contents")
+    contents.mkdir()
+    with (contents / "Info.plist").open("wb") as stream:
+        plistlib.dump({"CFBundleExecutable": "example", "CFBundleShortVersionString": "0.0.0",
+                       "CFBundleVersion": "0.0.0"}, stream)
+    build.stamp_version(tmp_path / "Example.app", build.released_version())
+    with (contents / "Info.plist").open("rb") as stream:
+        info = plistlib.load(stream)
+    assert info["CFBundleShortVersionString"] == build.released_version()
+    assert info["CFBundleVersion"] == build.released_version()
+    assert info["CFBundleExecutable"] == "example", "nothing else in the plist may move"
 
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="Requires macOS ditto and codesign")
