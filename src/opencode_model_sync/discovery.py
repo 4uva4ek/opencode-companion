@@ -15,6 +15,8 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any
 
+from .network import tls_context
+
 from .config import OpencodeConfig, Provider, configured_context, configured_visible, configured_tools, configured_vision, vision_unset
 
 # Embedding, speech, image and moderation models share the listing but cannot drive a chat session.
@@ -99,12 +101,14 @@ def discover(base_url: str, api_key: str | None = None, timeout: float = 6.0) ->
     root = re.sub(r"/(v1|api|api/v0|api/v1)$", "", base)
     client = _Client(api_key, timeout)
     try:
-        ollama = _ollama(client, root)
-        if ollama is not None:
-            return Discovery(ok=True, server="ollama", models=ollama)
-        lmstudio = _lmstudio(client, root)
-        if lmstudio is not None:
-            return Discovery(ok=True, server="lmstudio", models=lmstudio)
+        for server, probe in (("ollama", _ollama), ("lmstudio", _lmstudio)):
+            try:
+                models = probe(client, root)
+            except (OSError, ValueError, urllib.error.URLError):
+                # Native metadata endpoints are optional for OpenAI-compatible servers.
+                continue
+            if models is not None:
+                return Discovery(ok=True, server=server, models=models)
         return Discovery(ok=True, server="openai", models=_openai(client, base))
     except (OSError, ValueError, urllib.error.URLError) as error:
         return Discovery(ok=False, error=_describe(error))
@@ -222,7 +226,7 @@ class _Client:
         return headers
 
     def _send(self, request: urllib.request.Request) -> Any:
-        with urllib.request.urlopen(request, timeout=self.timeout) as response:
+        with urllib.request.urlopen(request, timeout=self.timeout, context=tls_context()) as response:
             return json.loads(response.read().decode("utf-8"))
 
 

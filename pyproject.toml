@@ -1,11 +1,12 @@
 [project]
 name = "opencode-companion"
-version = "0.7.1"
+version = "0.7.2"
 description = "Desktop companion for OpenCode models, agents, MCP servers, workspaces and settings"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
 dependencies = [
+    "certifi>=2024.8.30",
     "pyside6-essentials>=6.8",
     "jsonschema>=4.23,<5",
 ]

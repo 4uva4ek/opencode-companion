@@ -23,6 +23,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from .network import tls_context
+
 from .config import OpencodeConfig, configured_visible, configured_tools
 
 CATALOG_URL = "https://models.dev/api.json"
@@ -60,7 +62,7 @@ def load(path: Path, max_age: float = MAX_AGE, timeout: float = 30.0) -> dict[st
             pass
     try:
         request = urllib.request.Request(CATALOG_URL, headers={"User-Agent": "opencode-model-sync"})
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with urllib.request.urlopen(request, timeout=timeout, context=tls_context()) as response:
             raw = response.read()
         data = json.loads(raw.decode("utf-8"))
         if not isinstance(data, dict):

@@ -18,6 +18,8 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
+from .network import tls_context
+
 from .version import VERSION
 
 REPOSITORY = "4uva4ek/opencode-model-sync"
@@ -46,7 +48,7 @@ def asset_name(system: str | None = None, machine: str | None = None) -> str:
 def request(url: str):
     return urllib.request.urlopen(urllib.request.Request(url, headers={
         "User-Agent": f"OpenCode-Companion/{VERSION}", "Accept": "application/vnd.github+json",
-    }), timeout=30)
+    }), timeout=30, context=tls_context())
 
 
 @dataclass(frozen=True)

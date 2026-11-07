@@ -140,3 +140,22 @@ def test_config_tool_choice_wins_over_server():
     provider = Provider("p", "P", "http://h/v1", None, {"m": {"capabilities": {"tools": False}}})
     [row] = diff(provider, Discovery(ok=True, models=[RemoteModel(id="m", tools=True)]))
     assert row.in_config and row.tools is False
+
+
+@pytest.mark.parametrize("status", [401, 403, 500, 503])
+def test_native_endpoint_failure_does_not_hide_openai_models(server, monkeypatch, status):
+    import urllib.error
+    from opencode_model_sync.discovery import _Client
+
+    srv = server({"/v1/models": {"data": [{"id": "strata-model"}]}})
+    original = _Client.get
+
+    def get(self, url):
+        if "/api/" in url:
+            raise urllib.error.HTTPError(url, status, "native endpoint unavailable", {}, None)
+        return original(self, url)
+
+    monkeypatch.setattr(_Client, "get", get)
+    result = discover(f"{srv.url}/v1")
+    assert result.ok
+    assert [model.id for model in result.models] == ["strata-model"]

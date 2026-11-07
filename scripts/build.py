@@ -113,6 +113,7 @@ def stamp_version(app: Path, version: str) -> None:
         data = plistlib.load(stream)
     data["CFBundleShortVersionString"] = version
     data["CFBundleVersion"] = version
+    data["NSLocalNetworkUsageDescription"] = "OpenCode Companion connects to your local model servers to list and configure models."
     with info.open("wb") as stream:
         plistlib.dump(data, stream)
 
