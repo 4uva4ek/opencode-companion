@@ -43,7 +43,7 @@ def test_windows_bundle_rejects_wrong_icu_even_when_filename_matches(tmp_path):
 def test_a_built_bundle_carries_the_number_the_release_is_named_by(tmp_path):
     """PyInstaller is never told the version, so the finished bundle has to be told afterwards."""
     contents = (tmp_path / "Example.app" / "Contents")
-    contents.mkdir()
+    contents.mkdir(parents=True)
     with (contents / "Info.plist").open("wb") as stream:
         plistlib.dump({"CFBundleExecutable": "example", "CFBundleShortVersionString": "0.0.0",
                        "CFBundleVersion": "0.0.0"}, stream)
