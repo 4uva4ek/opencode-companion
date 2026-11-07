@@ -14,7 +14,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-14, windows-latest, ubuntu-22.04]
+        # macos-14 by name is refused before a runner is even picked: the job comes back cancelled in
+        # one second with "The configuration 'macos-14-arm64-us-default' is not supported", and the
+        # release job then skips itself because it waits for all three. The moving image is arm64 the
+        # same way, and the archive is named after the machine that built it, not after this label.
+        os: [macos-latest, windows-latest, ubuntu-22.04]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
