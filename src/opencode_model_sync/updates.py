@@ -22,7 +22,7 @@ from .network import tls_context
 
 from .version import VERSION
 
-REPOSITORY = "4uva4ek/opencode-model-sync"
+REPOSITORY = "4uva4ek/opencode-companion"
 RELEASES = f"https://github.com/{REPOSITORY}/releases"
 API = f"https://api.github.com/repos/{REPOSITORY}/releases/latest"
 MAX_DOWNLOAD = 1024 * 1024 * 1024
