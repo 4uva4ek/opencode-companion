@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+from html import escape
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -25,6 +26,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMainWindow,
     QMessageBox,
+    QPlainTextEdit,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -36,7 +38,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import agents, catalog, discovery, i18n, icons, tasks, theme, workspaces, vision
+from . import agents, catalog, discovery, i18n, icons, presets, tasks, theme, workspaces, vision
 from .agents_view import AgentDialog, AgentsPanel, ModelList, TeamDialog
 from .config import ConfigError, OpencodeConfig, Provider, config_path
 from .discovery import Discovery, ModelRow, RemoteModel, Suggestion
@@ -610,7 +612,8 @@ MODEL_WINDOW_MIN = 680
 # A model entry has no fields for generation: the schema closes the entry itself but leaves
 # `settings` free, and that map is where an AI SDK provider reads these names. They are spelled the
 # way the SDK sends them, so `topP` reaches the server as `top_p`; a server wanting other words, or
-# its own (`mirostat`, `repeat_penalty`), is served by the entry's `body` instead.
+# its own (`mirostat`, `repeat_penalty`, another name for the floor below), is served by the entry's
+# `body` instead.
 #
 # The bounds are this app's, not opencode's — the schema leaves the map free — and they are the
 # ranges every provider family agrees on, so a value one family rejects cannot be saved. Only the
@@ -618,38 +621,182 @@ MODEL_WINDOW_MIN = 680
 # such as how many tokens or which K have none. `default` is the number the provider families say
 # they use when the file says nothing, and it only parks the handle: it is never written by itself.
 # A value already in the config is never refused; ParamField widens its own range to take it.
+#
+# Two of these are not numbers at all, and a row invented for a number would be the wrong tool for
+# them: a level named in words and a list of strings are edited by the same controls the schema
+# forms use, and they keep the same "not written" as their first choice.
 MODEL_PARAMS = (
     ("temperature", {"type": "number", "minimum": 0, "maximum": 2, "multipleOf": 0.05, "default": 1}),
     ("topP", {"type": "number", "minimum": 0, "maximum": 1, "multipleOf": 0.01, "default": 1}),
     ("topK", {"type": "integer", "minimum": 1, "maximum": MAX_TOKENS}),
+    # The floor a sampler drops tokens below. llama.cpp, vLLM and the servers beside it all read
+    # this one, and it is the cheapest way to shorten an answer without freezing the model.
+    ("minP", {"type": "number", "minimum": 0, "maximum": 1, "multipleOf": 0.01, "default": 0}),
     ("presencePenalty", {"type": "number", "minimum": -2, "maximum": 2, "multipleOf": 0.1, "default": 0}),
     ("frequencyPenalty", {"type": "number", "minimum": -2, "maximum": 2, "multipleOf": 0.1, "default": 0}),
     ("maxOutputTokens", {"type": "integer", "minimum": 1, "maximum": MAX_TOKENS}),
     ("seed", {"type": "integer", "minimum": -MAX_SEED, "maximum": MAX_SEED}),
     ("stopSequences", {"type": "array", "items": {"type": "string"}}),
+    # The levels are named the way the OpenAI-compatible servers name them; a server with other
+    # words for them is served by the entry's `body`, which is why no other word is offered here.
+    ("reasoningEffort", {"type": "string", "enum": ["minimal", "low", "medium", "high"]}),
 )
+
+
+def presets_file() -> Path:
+    """The file of the templates a person saved: kept beside the config that never reads it.
+
+    Beside the file this window is editing rather than beside whatever the environment happens to
+    name, because for a config moved elsewhere the two answers differ, and a template describes the
+    models that stand in the config it belongs to. The environment still answers first: a person who
+    said where this application's files are should not have two answers to the same question.
+    """
+    return presets.file_for(config_path().parent)
+
+
+# The word a template's list of numbers uses for a field it leaves to the provider. A row missing
+# from that list would be read as a template that forgot the field, which is the opposite of what an
+# empty field is: an answer of its own.
+TIP_EMPTY = "—"
+
+
+def tip_value(value) -> str:
+    """One number of a template, written the way the row beside it writes it."""
+    if value is None:
+        return TIP_EMPTY
+    if isinstance(value, list):
+        return ", ".join(value) or TIP_EMPTY
+    return shown(value)
+
+
+def preset_tip(item: presets.Preset) -> str:
+    """Every number a template holds, spelled in the words of the rows it fills.
+
+    Comparing two templates by choosing one, reading eight rows, choosing the other and remembering
+    the first is not a comparison anybody can make. So the whole answer rides on the name: one hover
+    says what would be written and what would be taken back. The fields are named as the rows name
+    them, in the language the window is in, because a person comparing 0.3 with 0.6 is reading the
+    same words they will read in the rows a moment later.
+    """
+    pairs = [(field_name(("settings", key), info), tip_value(item.values.get(key)))
+             for key, info in MODEL_PARAMS]
+    named = {key for key, _ in MODEL_PARAMS}
+    # A word the app does not know — from a hand-written file or a later version — is still a word
+    # the template carries, so it is listed under its own name rather than kept quiet about.
+    pairs += [(key, tip_value(value)) for key, value in item.values.items()
+              if key not in named and presets.kept(value)]
+    rows = "".join(f"<tr><td>{escape(name)}</td><td>{escape(value)}</td></tr>"
+                   for name, value in pairs)
+    said = f"<p>{escape(item.description)}</p>" if item.description else ""
+    return (f"<p><b>{escape(item.name)}</b></p>{said}"
+            f"<table cellspacing='4' cellpadding='0'>{rows}</table>"
+            f"<p>{tr('model.presetsTipEmpty')}</p>")
+
+
+
+class SavePresetDialog(QDialog):
+    """The two words a template is saved under.
+
+    The numbers themselves are not repeated here: they are the fields the person has just filled,
+    and a dialog that shows eight of them a second time is a second place to be surprised. What is
+    asked for is a name and the sentence that will tell a later reader — usually the same person —
+    why this set of numbers exists at all.
+    """
+
+    def __init__(self, parent: QWidget, fields: int, file: Path,
+                 own: list[str], shipped: list[str]) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(tr("model.presetsSaveTitle"))
+        self.setMinimumWidth(480)
+        self.own = [name.casefold() for name in own]
+        self.shipped = [name.casefold() for name in shipped]
+        self.name = QLineEdit()
+        self.name.setPlaceholderText(tr("model.presetsNamePlaceholder"))
+        self.description = QPlainTextEdit()
+        self.description.setFixedHeight(96)
+        self.description.setPlaceholderText(tr("model.presetsDescriptionPlaceholder"))
+        # Said while the name is typed, rather than after the click that already saved something:
+        # "yours will be rewritten" is worth reading before the button, not instead of the button.
+        self.warned = label("", "hint", wrap=True)
+        self.error = label("", "error", wrap=True)
+        title = label(tr("model.presetsSaveTitle"), "title")
+        title.setStyleSheet("font-size: 18px;")
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(22, 20, 22, 20)
+        layout.setSpacing(6)
+        layout.addWidget(title)
+        layout.addWidget(label(tr("model.presetsSaving", count=fields), "hint", wrap=True))
+        layout.addSpacing(8)
+        layout.addWidget(label(tr("model.presetsName"), "fieldLabel"))
+        layout.addWidget(self.name)
+        layout.addWidget(label(tr("model.presetsDescription"), "fieldLabel"))
+        layout.addWidget(self.description)
+        layout.addWidget(self.warned)
+        layout.addWidget(self.error)
+        layout.addSpacing(6)
+        layout.addWidget(label(tr("model.presetsStored", file=file.name), "hint", wrap=True))
+        layout.addSpacing(8)
+        cancel = button(tr("dialog.cancel"), "ghost")
+        cancel.clicked.connect(self.reject)
+        save = button(tr("model.presetsSave"), "primary", "check")
+        save.clicked.connect(self._accept)
+        actions = QHBoxLayout()
+        actions.addStretch(1)
+        actions.addWidget(cancel)
+        actions.addWidget(save)
+        layout.addLayout(actions)
+        self.name.textEdited.connect(self._typed)
+        self.name.returnPressed.connect(self._accept)
+
+    def _typed(self, text: str) -> None:
+        """Which of the two kinds of name collision the typed words are, if either."""
+        said = text.strip().casefold()
+        if said in self.own:
+            self.warned.setText(tr("model.presetsNameTaken"))
+        elif said in self.shipped:
+            self.warned.setText(tr("model.presetsNameShadows"))
+        else:
+            self.warned.setText("")
+
+    def values(self) -> tuple[str, str]:
+        return self.name.text().strip(), self.description.toPlainText()
+
+    def _accept(self) -> None:
+        name, _ = self.values()
+        if not name:
+            self.error.setText(tr("model.presetsNameNeeded"))
+            return
+        self.error.setText("")
+        self.accept()
 
 
 class ModelSettingsDialog(ValueDialog):
     """One window with everything a model entry is allowed to say, in three tabs.
 
     The first is what the list row used to carry: whether the model shows in OpenCode, whether it
-    calls tools, whether it takes images, and how large a context it gets. The middle holds the
-    generation parameters, which opencode has no fields for because it leaves ``settings`` free and
-    hands the names to the provider. The last carries the rest of opencode's own fields, read from
-    its schema so the list cannot drift from what the backend reads.
+    calls tools, whether it takes images and a temperature, and how large a context it gets. The
+    middle holds the generation parameters, which opencode has no fields for because it leaves
+    ``settings`` free and hands the names to the provider, and opens with the standard sets those
+    numbers are filled from. The last carries the rest of opencode's own fields, read from its
+    schema so the list cannot drift from what the backend reads.
 
     Nothing is written that the user did not touch: an entry that never mentioned tools keeps that
-    silence after this window has been opened and closed again.
+    silence after this window has been opened and closed again. Filling a template is a touch, and
+    it is a touch made on purpose — the click that fills the fields writes nothing by itself.
     """
 
-    def __init__(self, parent: QWidget, provider_id: str, model_id: str, entry: dict) -> None:
+    def __init__(self, parent: QWidget, provider_id: str, model_id: str, entry: dict,
+                 preset_file: Path | None = None) -> None:
         saved = entry.get("settings") if isinstance(entry.get("settings"), dict) else {}
         # What the config really held: clearing a row may only take away a word that was written.
         self.seeded = {key: saved[key] for key, _ in MODEL_PARAMS if key in saved}
         # The two answers a config file cannot give on its own; the main window fills both in.
         self.on_probe = None
         self.on_context = None
+        # The templates this person saved themselves, read when the window opens: the file is small,
+        # and reading it again on every save is what keeps a second open window honest.
+        self.preset_file = preset_file or presets_file()
+        self.own = presets.load(self.preset_file)
         self.touched: set[str] = set()
         self._building = True
         super().__init__(model_schema(), entry, ("providers", provider_id, "models", model_id), parent)
@@ -673,9 +820,41 @@ class ModelSettingsDialog(ValueDialog):
         form = QVBoxLayout(body)
         form.setContentsMargins(*TAB_PADDING)
         form.setSpacing(10)
+
         form.addWidget(label(tr("model.params"), "fieldLabel"))
         form.addWidget(label(tr("model.paramsHint"), "hint", wrap=True))
         form.addWidget(label(tr("model.paramsBounds"), "hint", wrap=True))
+
+        # The fast way in, standing directly above the numbers it fills: one name is one decision
+        # where eight numbers are eight, and a person choosing a name should not have to scroll back
+        # up to remember where the choice was. Taking a template stays a separate click — a box that
+        # filled the fields the moment its name was highlighted would have decided for a person still
+        # reading — and the buttons at the end of the row are what turns the list from five shipped
+        # answers into the person's own.
+        form.addWidget(label(tr("model.presets"), "fieldLabel"))
+        chosen = QHBoxLayout()
+        chosen.setSpacing(8)
+        self.preset_box = QComboBox()
+        self.preset_box.setMinimumWidth(200)
+        self.preset_box.setToolTip(tr("model.presetsHint"))
+        self.preset_box.currentIndexChanged.connect(self._preset_shown)
+        self.preset_button = button(tr("model.presetsApply"), "ghost")
+        self.preset_button.setToolTip(tr("model.presetsHint"))
+        self.preset_button.clicked.connect(self.fill_from_preset)
+        self.preset_save = button(tr("model.presetsSave"), "ghost")
+        self.preset_save.setToolTip(tr("model.presetsSaveHint"))
+        self.preset_save.clicked.connect(self.save_preset)
+        self.preset_remove = button(tr("model.presetsRemove"), "ghost")
+        self.preset_remove.setToolTip(tr("model.presetsRemoveHint"))
+        self.preset_remove.clicked.connect(self.delete_preset)
+        for one in (self.preset_box, self.preset_button, self.preset_save, self.preset_remove):
+            chosen.addWidget(one, 1 if one is self.preset_box else 0)
+        form.addLayout(chosen)
+        # What the chosen name says and whose it is: the row holds shipped answers and own ones
+        # together, and the difference between them is whether the last button does anything.
+        self.preset_note = label("", "hint", wrap=True)
+        form.addWidget(self.preset_note)
+        self._fill_presets()
 
         # One card for the numbers. Every row keeps the same widths, so the bounds and the typed
         # numbers read down the page as one table rather than as eight separate arguments.
@@ -687,8 +866,9 @@ class ModelSettingsDialog(ValueDialog):
         form.addWidget(numbers)
         for key, info in MODEL_PARAMS:
             path = (*self.path, "settings", key)
-            if info.get("type") == "array":
-                # A list of words has no range to draw; the ordinary editor of a list says it best.
+            if info.get("type") not in ("number", "integer"):
+                # A list of words and a level named in words have no range to draw: the editors the
+                # schema forms use for them say both better than a groove with nothing to aim at.
                 row = FieldRow(info, saved.get(key, MISSING), path)
                 self.params[key] = row.control
                 form.addWidget(row)
@@ -698,6 +878,125 @@ class ModelSettingsDialog(ValueDialog):
             column.addWidget(field)
         form.addStretch(1)
         return scrolled(body)
+
+    def _fill_presets(self, selected: str | None = None) -> None:
+        """The list the row offers: the entry that says "no template", the five that came with the
+        app, then the ones this person saved. Their own read come first in the file and last in the
+        row, because the shipped five are what a stranger of the app would look for, and a list that
+        reordered itself under a save would take the eyes somewhere they were not."""
+        self.preset_box.blockSignals(True)
+        self.preset_box.clear()
+        self.preset_box.addItem(tr("model.presetsNone"), None)
+        for item in (*presets.PRESETS, *self.own):
+            self.preset_box.addItem(item.name, item.id)
+            # The whole answer on the name itself: a list of names that hides its numbers can only
+            # be read one choice at a time, and that is not reading, it is remembering.
+            self.preset_box.setItemData(self.preset_box.count() - 1, preset_tip(item),
+                                        Qt.ItemDataRole.ToolTipRole)
+        index = self.preset_box.findData(selected) if selected else 0
+        self.preset_box.setCurrentIndex(index if index > 0 else 0)
+        self.preset_box.blockSignals(False)
+        self._preset_shown()
+
+    def _preset_shown(self, *_args) -> None:
+        """What the standing name says, and whether it belongs to the person using the window."""
+        item = presets.one(self.preset_box.currentData(), self.own)
+        # Only an own template can be deleted, and the button says so by being dead rather than by
+        # refusing afterwards: the five that came with the app are the same for everyone, and one
+        # click quietly emptying the row is not a way to lose them.
+        self.preset_remove.setEnabled(item is not None and item.custom)
+        # The closed list answers for itself as well: the list is open for a moment, while the
+        # question "what would this write" is asked of the box standing shut. What the click does is
+        # written on the button beside it, so nothing is lost by giving the box the numbers.
+        self.preset_box.setToolTip(tr("model.presetsHint") if item is None else preset_tip(item))
+        if item is None:
+            self.preset_note.setText("")
+            return
+        said = item.description or tr("model.presetsNoDescription")
+        mine = tr("model.presetsOwn") if item.custom else tr("model.presetsBuiltIn")
+        self.preset_note.setText(f"{said}\n\n{mine}")
+
+    def current_values(self) -> dict:
+        """The numbers the fields hold as they stand, a ticked field included as the word "nothing".
+
+        A field that cannot say its number stops the save instead of saving a template that would
+        refuse its own window later. It is named by the word a person reads on the row rather than by
+        the path through the file, because at this moment nothing is being written to a file.
+        """
+        values = {}
+        for key, control in self.params.items():
+            try:
+                held = control.value()
+            except (ValueError, TypeError):
+                raise ValueError(key) from None
+            values[key] = None if held is MISSING else held
+        return values
+
+    def save_preset(self) -> None:
+        """Saves the fields as they stand under a name, next to the five the app came with.
+
+        The numbers are taken as they stand rather than as the chosen template said them, so a set
+        that was filled from a template and then corrected by hand is saved as the corrected one —
+        which is the only reason to save it at all.
+        """
+        try:
+            values = self.current_values()
+        except ValueError as field:
+            self.preset_note.setText(tr("model.presetsBadValues", field=str(field)))
+            return
+        dialog = SavePresetDialog(self, len(values), self.preset_file,
+                                  own=[item.name_text for item in self.own],
+                                  shipped=[item.name for item in presets.PRESETS])
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        name, description = dialog.values()
+        try:
+            saved, replaced = presets.save(name, description, values, self.preset_file)
+        except (OSError, presets.PresetError) as error:
+            self.preset_note.setText(tr("model.presetsSaveFailed", error=error))
+            return
+        self.own = presets.load(self.preset_file)
+        self._fill_presets(selected=saved.id)
+        # Said after the list was rebuilt: choosing the new name paints its own description there.
+        self.preset_note.setText(tr("model.presetsReplaced" if replaced else "model.presetsSaved",
+                                    name=saved.name))
+
+    def delete_preset(self) -> None:
+        """Takes an own template out, the model's own numbers left exactly where they are."""
+        item = presets.one(self.preset_box.currentData(), self.own)
+        if item is None or not item.custom:
+            self.preset_note.setText(tr("model.presetsBuiltIn"))
+            return
+        answer = QMessageBox.question(
+            self, tr("model.presetsRemoveTitle"), tr("model.presetsRemoveText", name=item.name),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No)
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            presets.remove(item.id, self.preset_file)
+        except (OSError, presets.PresetError) as error:
+            self.preset_note.setText(tr("model.presetsSaveFailed", error=error))
+            return
+        self.own = presets.load(self.preset_file)
+        self._fill_presets()
+        self.preset_note.setText(tr("model.presetsRemoved", name=item.name))
+
+    def fill_from_preset(self) -> None:
+        """Every field takes the template's answer, the empty fields of it included.
+
+        A field the template leaves empty gets its tick back: the word goes out of the entry and the
+        provider decides that one again, which is the only way a template can give a model back a
+        number some other template had written in. Nothing here touches the file — the window is
+        applied by its own button, and a person who changes one number afterwards changes one number.
+        """
+        preset = presets.one(self.preset_box.currentData(), self.own)
+        if preset is None:
+            return
+        for key, control in self.params.items():
+            value = preset.values.get(key)
+            control.set_value(MISSING if value is None else value)
+        self.preset_note.setText(tr("model.presetsApplied", name=preset.name))
 
     def _three_parts(self, entry: dict) -> None:
         """Words on top, the tabs and their page across the window, buttons underneath.
@@ -787,6 +1086,13 @@ class ModelSettingsDialog(ValueDialog):
         line.addStretch(1)
         column.addLayout(line)
 
+        # Whether a temperature may be sent at all. Some servers answer a request carrying one with
+        # an error rather than with an answer, and this word — nothing else — is what stops the
+        # number the fields below hold from ever leaving the machine.
+        self.temperature = self._three_way("temperature", "dialog.temperature",
+            capabilities.get("temperature"), tr("dialog.temperatureHint"))
+        column.addWidget(self.temperature)
+
         self.state = label("", "hint", wrap=True)
         column.addWidget(self.state)
 
@@ -854,7 +1160,7 @@ class ModelSettingsDialog(ValueDialog):
         if self._building or not hasattr(self, "state"):
             return
         quiet = []
-        for box in (self.tools, self.images):
+        for box in (self.tools, self.images, self.temperature):
             if box.checkState() == Qt.CheckState.PartiallyChecked:
                 quiet.append(f"{box.text()} — {tr('dialog.undecided')}")
         if not self.context.value():
@@ -908,7 +1214,7 @@ class ModelSettingsDialog(ValueDialog):
                 entry.pop("disabled", None)  # showing a model again leaves no `disabled: false`
             else:
                 entry["disabled"] = True
-        if "tools" in self.touched or "images" in self.touched:
+        if "tools" in self.touched or "images" in self.touched or "temperature" in self.touched:
             capabilities = dict(entry["capabilities"]) if isinstance(entry.get("capabilities"), dict) else {}
             if "tools" in self.touched:
                 # Both the checked and the dashed state leave the word out: opencode's own default
@@ -917,6 +1223,13 @@ class ModelSettingsDialog(ValueDialog):
                     capabilities["tools"] = False
                 else:
                     capabilities.pop("tools", None)
+            if "temperature" in self.touched:
+                # The same rule for the same reason: a model that takes a temperature is the answer
+                # opencode gives itself, so only the refusal is a word worth writing down.
+                if self.temperature.checkState() == Qt.CheckState.Unchecked:
+                    capabilities["temperature"] = False
+                else:
+                    capabilities.pop("temperature", None)
             if "images" in self.touched:
                 state = self.images.checkState()
                 if state == Qt.CheckState.PartiallyChecked:
@@ -956,9 +1269,13 @@ class ModelSettingsDialog(ValueDialog):
             self.collection.fill()
         # The first tab decides the same way: every word taken out of the entry, deliberately.
         self.visible.setChecked(True)
-        for box in (self.tools, self.images):
+        for box in (self.tools, self.images, self.temperature):
             box.setCheckState(Qt.CheckState.PartiallyChecked)
         self.context.setValue(0)
+        # No template stands filled in any more, and the note beside it would otherwise keep
+        # claiming one had been, next to fields that no longer hold its numbers.
+        self.preset_box.setCurrentIndex(0)
+        self.preset_note.clear()
 
 
 class MainWindow(QMainWindow):

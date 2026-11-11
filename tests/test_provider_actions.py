@@ -532,8 +532,7 @@ def test_the_model_window_names_its_fields_in_both_languages(view, language):
                  for row in dialog.findChildren(window.FieldRow)}
         named |= {f"settings.{field.path[-1]}": field.name_label.text()
                   for field in dialog.findChildren(window.ParamField)}
-        for key in ("temperature", "topP", "topK", "presencePenalty", "frequencyPenalty",
-                    "maxOutputTokens", "seed", "stopSequences"):
+        for key, _info in window.MODEL_PARAMS:
             assert named[f"settings.{key}"] not in ("", key), f"{key} is spelled for a human"
         assert i18n.tr("model.params") in [row.text() for row in dialog.findChildren(window.QLabel)]
         assert dialog.defaults.text() == i18n.tr("model.defaults")
@@ -582,8 +581,8 @@ def test_every_parameter_prints_the_numbers_it_accepts(view):
     dialog = window.ModelSettingsDialog(widget, "local", "m", ENTRY)
     seen = 0
     for key, info in window.MODEL_PARAMS:
-        if info.get("type") == "array":
-            continue
+        if info.get("type") not in ("number", "integer"):
+            continue  # a level named in words and a list of words have no range to print
         seen += 1
         field = dialog.params[key]
         assert info.get("minimum") is not None and info.get("maximum") is not None, key
@@ -597,7 +596,13 @@ def test_every_parameter_prints_the_numbers_it_accepts(view):
         else:
             expected = i18n.tr("model.atLeast", value=window.shown(info["minimum"]))
         assert expected in field.toolTip(), key
-    assert seen == 7
+    assert seen == 8, "every number the window offers is bounded; a ninth comes with its own bounds"
+    for key, info in window.MODEL_PARAMS:
+        if info.get("type") in ("number", "integer"):
+            continue
+        # What is not a number is written by the same editor the schema forms use, and it starts
+        # saying nothing, like every other field of an entry the file never named.
+        assert dialog.params[key].value() is window.MISSING, key
 
 
 def test_a_number_outside_the_printed_bounds_is_refused_by_the_field_itself(view):
@@ -687,10 +692,13 @@ def test_a_field_that_offers_to_write_but_holds_no_number_is_refused_by_name(vie
 
 
 def test_the_parameter_rows_keep_their_columns(view):
-    """The seven numbers read down one column at every width the window can be, groove included."""
+    """The numbers read down one column at every width the window can be, groove included."""
     widget, _ = view
+    # Every field written on purpose: a field left to the provider hides its groove, and the width
+    # of a hidden groove is a number the layout stopped maintaining, not a column it disagrees on.
     written = {"settings": {"temperature": 0.7, "topP": 0.9, "presencePenalty": 0.1,
-                            "frequencyPenalty": 0.2, "topK": 40, "maxOutputTokens": 4096, "seed": 3}}
+                            "frequencyPenalty": 0.2, "topK": 40, "minP": 0.05,
+                            "maxOutputTokens": 4096, "seed": 3}}
     dialog = window.ModelSettingsDialog(widget, "local", "m", written)
     dialog.show()
     dialog.tabs.setCurrentIndex(1)
@@ -701,7 +709,8 @@ def test_the_parameter_rows_keep_their_columns(view):
             for _ in range(8):
                 app.processEvents()
             fields = [one for one in dialog.params.values() if isinstance(one, window.ParamField)]
-            assert len(fields) == 7
+            assert len(fields) == sum(1 for _, info in window.MODEL_PARAMS
+                                      if info.get("type") in ("number", "integer"))
             starts = {one.mapTo(dialog, one.rect().topLeft()).x() for one in fields}
             numbers = {one.text.mapTo(dialog, one.text.rect().topLeft()).x() for one in fields}
             assert len(starts) == 1 and len(numbers) == 1, (width, starts, numbers)

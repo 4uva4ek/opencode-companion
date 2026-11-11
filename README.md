@@ -15,6 +15,7 @@ A small desktop app for Linux, macOS (Apple Silicon) and Windows. It asks your m
 - Two independent buttons keep the same labels in both states. Highlighted means on; muted means off:
   - **Display** shows or hides the model in OpenCode's catalog through the config, preserving its settings.
   - **Tools** enables or disables tool-calling support.
+- The gear on a model row opens every setting opencode allows for that model, and its **Template** picker fills the generation parameters from one of five standard sets.
 - Only one Companion instance runs per user. Launching again brings the existing window forward, including from the tray. A crashed instance does not prevent the next launch.
 - Finds local servers on their default ports that are not in the config yet and offers to add them.
 - The config only changes when you press a button. A backup `opencode.json.bak-model-sync-*` is written next to it before the first change.
@@ -40,6 +41,30 @@ Image input is written in the words of the one map that is written:
 - A provider that came from `provider` / `npm` / `options` arrives there through the same translation, so its `models.<id>.modalities` becomes `capabilities`.
 
 Existing input/output modalities are preserved; disabling images removes only `image` from input. Saves use the normal backup and atomic write. As with other provider edits, commented JSONC is refused rather than rewritten; a visual test is not started when its result cannot safely be saved. These formats follow the [OpenCode 2.x provider config schema](https://github.com/anomalyco/opencode/blob/dev/packages/schema/src/config/provider.ts).
+
+## Generation templates
+
+The model window (**⚙** on a row) opens on **Configuration**, and the **Template** picker stands directly above the numbers it fills. Five standard sets are offered, and each answers every generation field at once. Hovering a name — in the list or in the closed box — shows what it holds: every field in the words the rows use, its number, and a dash for the fields it leaves to the provider, so two templates can be read against each other without choosing them one after the other:
+
+| Template | What it says |
+| --- | --- |
+| **Repeatable** | Temperature 0, top-p 1, top-k 1, min-p 0, both penalties 0 — the same question gets the same answer as far as the server allows. |
+| **Code and edits** | 0.3 under a 0.9 nucleus, top-k 40, both penalties 0, so nothing is talked out of reusing an identifier it has already written. |
+| **Everyday** | 0.6 under a 0.95 nucleus, top-k 40, penalties 0 — enough variety to explain a thing twice, little enough to stay on the question. |
+| **Short answers** | 0.4 with min-p 0.05 and one answer capped at 2048 tokens. The cap cuts a long file edit as readily as a long preamble: take that field's tick off for a model that writes whole files. |
+| **Creative writing** | 1.1, a 0.98 nucleus, top-k 120 and both penalties at 0.3 — for wording, not for code. |
+
+A template is the whole answer rather than a nudge: a field it leaves empty gets its tick back, which takes that word out of the entry and lets the provider decide it again. So a seed written by one template is gone after the next. Filling the fields writes nothing by itself; the window is applied by its own button, and a number changed by hand afterwards stays as you left it. Provider words the app does not know (`mirostat`, `repeat_penalty`) are left alone.
+
+The fields beside the templates are the names an AI SDK provider reads, and they now include **min-p**, the floor below which tokens are dropped, and **reasoning effort** (`minimal`/`low`/`medium`/`high`). Every template leaves reasoning effort unwritten: a level asked for of a model that cannot reason is a request a server may refuse outright. The **Displays** tab adds **Accepts a temperature** for a server that answers a request carrying one with an error instead of an answer — opencode then leaves the word out, and the numbers stay in the file unused.
+
+### Your own templates
+
+**Save as…** takes every field as it stands in the window — including a number you corrected after filling a template, which is usually the reason to save one — and asks for a name and a sentence. Saved templates appear in the same picker after the five, marked as yours, and **Delete** takes one out after asking. The five that came with Companion cannot be deleted: they are the same for everyone who runs the app, and the refusal is in the file's own reader, not only in whether the button is lit.
+
+Saving under a name one of yours already bears rewrites that one; saving under the name of a built-in leaves the built-in alone and adds yours beside it. Deleting a template changes no model: an entry keeps the numbers written in it, and a template is only a way to fill the fields.
+
+Own templates are kept in `model-sync-presets.json` beside the opencode config (`OPENCODE_MODEL_SYNC_PRESETS` moves that file). opencode does not read it, and removing the file only empties the list. A template saved before some future field existed says nothing about that field, which is the same answer as leaving its row ticked.
 
 ## Settings and MCP
 

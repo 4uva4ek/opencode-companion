@@ -95,6 +95,66 @@ _TEXT: dict[str, dict[str, str]] = {
         "model.outside": "outside the usual range",
         "model.defaults": "Defaults",
         "model.defaultsHint": "Clear every field: opencode decides each of them again.",
+        "model.presets": "Template",
+        "model.presetsNone": "No template",
+        "model.presetsApply": "Fill in",
+        "model.presetsTipEmpty": "A dash is a field the template leaves empty: applying it takes that "
+                                 "word out of the entry, and the provider decides it again.",
+        "model.presetsHint": "A template fills every field below in one click. A field the template "
+                             "leaves empty takes its tick back: the word goes out of the file and the "
+                             "provider decides that one again. Filling writes nothing by itself — the "
+                             "window is applied by its own button.",
+        "model.presetsApplied": "Filled from the template “{name}”. The config changes once you apply this window.",
+        "model.presetsSave": "Save as…",
+        "model.presetsSaveHint": "Save the numbers as they stand in the fields, under a name of your own",
+        "model.presetsRemove": "Delete",
+        "model.presetsRemoveHint": "Delete your own template; the ones that came with Companion cannot be deleted",
+        "model.presetsSaveTitle": "Save these numbers as a template",
+        "model.presetsSaving": "The template takes every field as it stands now — {count} of them — and "
+                              "a field left on its tick is saved as nothing to write.",
+        "model.presetsStored": "Templates are kept in {file}, beside the opencode config. opencode does "
+                               "not read that file, and deleting it only empties this list.",
+        "model.presetsName": "Name",
+        "model.presetsNamePlaceholder": "Soft and short",
+        "model.presetsDescription": "What it says, and what for",
+        "model.presetsDescriptionPlaceholder": "One sentence for whoever wonders later why these numbers.",
+        "model.presetsNameTaken": "That name is already one of yours: saving rewrites that template.",
+        "model.presetsNameShadows": "A template built into Companion bears this name. It stays where it "
+                                    "is; yours appears beside it.",
+        "model.presetsNameNeeded": "Give the template a name.",
+        "model.presetsSaved": "Template “{name}” saved.",
+        "model.presetsReplaced": "Template “{name}” rewritten with the numbers as they stand.",
+        "model.presetsSaveFailed": "Could not write the template: {error}",
+        "model.presetsRemoveTitle": "Delete the template?",
+        "model.presetsRemoveText": "Delete “{name}”? Every model keeps the numbers it holds now: a "
+                                   "template is only a way to fill the fields.",
+        "model.presetsRemoved": "Template “{name}” deleted.",
+        "model.presetsOwn": "This one is yours, and it can be deleted.",
+        "model.presetsGone": "That template is not in the file any more.",
+        "model.presetsBuiltIn": "This one came with Companion and cannot be deleted.",
+        "model.presetsNoDescription": "No description.",
+        "model.presetsBadValues": "Finish the number in {field} before saving a template.",
+        "preset.exact.name": "Repeatable",
+        "preset.exact.hint": "Temperature 0 and the narrowest samplers there are: the same question "
+                             "gets the same answer, as far as the server allows. For code, diffs and "
+                             "anything a machine reads back.",
+        "preset.code.name": "Code and edits",
+        "preset.code.hint": "Cool without being frozen, and both penalties at zero so nothing is "
+                            "talked out of reusing an identifier it has already written. A penalty is "
+                            "precisely what makes a model invent a second name for one thing.",
+        "preset.everyday.name": "Everyday",
+        "preset.everyday.hint": "0.6 under a wide nucleus: enough variety to explain a thing twice in "
+                               "different words, little enough to stay on the question. A place to "
+                               "start for questions about a codebase.",
+        "preset.brief.name": "Short answers",
+        "preset.brief.hint": "0.4 with min-p 0.05, which drops the tokens a model reaches for when it "
+                             "stretches a sentence, and one answer capped at 2048 tokens. Take the "
+                             "tick off that last number if this model writes whole files: the cap "
+                             "cuts a long edit as readily as a long preamble.",
+        "preset.creative.name": "Creative writing",
+        "preset.creative.hint": "1.1 under a wide nucleus and both penalties at 0.3: wording that "
+                                "varies and does not repeat itself. For names and texts, not for code "
+                                "— a made-up identifier costs more than a dull one.",
         "banner.modelUpdated": "Settings of {model} saved.",
         "banner.contextNoApi": "{model}: the server did not report a context length.",
         # The model window opens on its own tab: the three words the list row used to carry.
@@ -103,6 +163,10 @@ _TEXT: dict[str, dict[str, str]] = {
         "dialog.tabAdvanced": "Settings",
         "dialog.visible": "Show this model in OpenCode",
         "dialog.capabilities": "Capabilities",
+        "dialog.temperature": "Accepts a temperature",
+        "dialog.temperatureHint": "For a server that answers a request carrying a temperature with an "
+                                  "error rather than with an answer: opencode then leaves the word out, "
+                                  "and the numbers below stay in the file unused.",
         "dialog.keep": "A box left alone keeps what the config already says: only what you touch is written.",
         "dialog.undecided": "not decided, opencode chooses",
         "dialog.contextNone": "not written, opencode decides",
@@ -445,6 +509,65 @@ _TEXT: dict[str, dict[str, str]] = {
         "model.outside": "вне обычного предела",
         "model.defaults": "По умолчанию",
         "model.defaultsHint": "Очистить все поля: opencode сам решит каждое из них.",
+        "model.presets": "Шаблон",
+        "model.presetsNone": "Без шаблона",
+        "model.presetsApply": "Заполнить",
+        "model.presetsTipEmpty": "Прочерк — поле, которое шаблон оставляет пустым: применение убирает "
+                                 "это слово из записи, и решение снова принимает провайдер.",
+        "model.presetsHint": "Шаблон заполняет все поля ниже одним нажатием. Поле, которое шаблон "
+                             "оставляет пустым, возвращает себе галочку: слово уходит из файла, и "
+                             "это решение снова принимает провайдер. Само заполнение ничего не "
+                             "пишет — окно применяется его же кнопкой.",
+        "model.presetsApplied": "Заполнено по шаблону «{name}». Конфиг изменится, когда вы примените это окно.",
+        "model.presetsSave": "Сохранить как…",
+        "model.presetsSaveHint": "Сохранить числа так, как они стоят в полях, под своим именем",
+        "model.presetsRemove": "Удалить",
+        "model.presetsRemoveHint": "Удалить свой шаблон; встроенные в Companion удалить нельзя",
+        "model.presetsSaveTitle": "Сохранить эти числа как шаблон",
+        "model.presetsSaving": "Шаблон возьмёт все поля такими, какие они сейчас — их {count}, — а поле "
+                               "с галочкой сохранится как «ничего не писать».",
+        "model.presetsStored": "Шаблоны лежат в файле {file} рядом с конфигом opencode. opencode его не "
+                               "читает, а удаление файла лишь опустошает этот список.",
+        "model.presetsName": "Название",
+        "model.presetsNamePlaceholder": "Мягко и коротко",
+        "model.presetsDescription": "Что он делает и зачем",
+        "model.presetsDescriptionPlaceholder": "Одно предложение для того, кто позже спросит, откуда эти числа.",
+        "model.presetsNameTaken": "Так уже называется один из ваших шаблонов: сохранение перезапишет его.",
+        "model.presetsNameShadows": "Так называется встроенный шаблон. Он останется на месте, а ваш "
+                                    "появится рядом с тем же именем.",
+        "model.presetsNameNeeded": "Дайте шаблону имя.",
+        "model.presetsSaved": "Шаблон «{name}» сохранён.",
+        "model.presetsReplaced": "Шаблон «{name}» перезаписан текущими числами.",
+        "model.presetsSaveFailed": "Не удалось записать шаблон: {error}",
+        "model.presetsRemoveTitle": "Удалить шаблон?",
+        "model.presetsRemoveText": "Удалить «{name}»? Все модели сохранят числа, которые записаны в них "
+                                   "сейчас: шаблон — это только способ заполнить поля.",
+        "model.presetsRemoved": "Шаблон «{name}» удалён.",
+        "model.presetsOwn": "Этот шаблон ваш, его можно удалить.",
+        "model.presetsGone": "Этого шаблона уже нет в файле.",
+        "model.presetsBuiltIn": "Этот шаблон встроен в Companion, удалить его нельзя.",
+        "model.presetsNoDescription": "Без описания.",
+        "model.presetsBadValues": "Допишите число в {field}, прежде чем сохранять шаблон.",
+        "preset.exact.name": "Предсказуемый",
+        "preset.exact.hint": "Температура 0 и самые узкие отборщики из возможных: один и тот же вопрос "
+                             "получает один и тот же ответ, насколько это позволяет сервер. Для кода, "
+                             "диффов и всего, что читает машина.",
+        "preset.code.name": "Код и правки",
+        "preset.code.hint": "Холодно, но не заморожено, и оба штрафа по нулям — чтобы модель не "
+                            "отвлекали от имени, которое она уже написала. Штраф за частоту как раз и "
+                            "заставляет выдумывать второе имя для одной и той же вещи.",
+        "preset.everyday.name": "Повседневный",
+        "preset.everyday.hint": "0.6 под широким ядром: разнообразия хватает, чтобы объяснить мысль "
+                                "другими словами, и мало, чтобы не сворачивать с вопроса. С него стоит "
+                                "начинать вопросы по кодовой базе.",
+        "preset.brief.name": "Короткие ответы",
+        "preset.brief.hint": "0.4 и min-p 0.05 — отсекает токены, которыми модель растягивает фразу, и "
+                             "ответ не длиннее 2048 токенов. Снимите галочку с последнего числа, если "
+                             "эта модель пишет целые файлы: потолок обрывает и длинную правку тоже.",
+        "preset.creative.name": "Креативный текст",
+        "preset.creative.hint": "1.1 под широким ядром и оба штрафа по 0.3: формулировки разнообразны "
+                                "и не повторяются. Для названий и текстов, не для кода — выдуманное "
+                                "имя обходится дороже скучного.",
         "banner.modelUpdated": "Настройки модели {model} сохранены.",
         "banner.contextNoApi": "{model}: сервер не сообщил длину контекста.",
         # Окно модели начинается со своей вкладки: три слова, которые раньше несла строка списка.
@@ -453,6 +576,10 @@ _TEXT: dict[str, dict[str, str]] = {
         "dialog.tabAdvanced": "Параметры",
         "dialog.visible": "Показывать эту модель в OpenCode",
         "dialog.capabilities": "Возможности",
+        "dialog.temperature": "Принимает температуру",
+        "dialog.temperatureHint": "Для сервера, который отвечает ошибкой на запрос с температурой, а "
+                                  "не ответом: opencode перестанет её отправлять, а числа ниже "
+                                  "останутся в файле неиспользованными.",
         "dialog.keep": "Не тронутый флажок оставляет то, что уже записано в конфиге: пишется только изменённое.",
         "dialog.undecided": "не решено — выбирает opencode",
         "dialog.contextNone": "не записан — решает opencode",

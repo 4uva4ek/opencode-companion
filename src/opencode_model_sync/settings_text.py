@@ -230,6 +230,8 @@ primary_tools|Primary-only tools|Инструменты основного аг�
 continue_loop_on_deny|Continue after denial|Продолжать после запрета|Continue the agent loop after a tool request is denied.|Продолжать работу агента после запрета вызова инструмента.
 topP|Nucleus sampling (top P)|Ядерная выборка (top P)|Keep the smallest set of tokens whose probabilities add up to this value.|Оставлять минимальный набор токенов, чьи вероятности дают эту сумму.
 topK|Top-K sampling|Отбор top K|Only the K most likely tokens are considered at each step.|На каждом шаге рассматриваются только K самых вероятных токенов.
+minP|Minimum probability (min P)|Минимальная вероятность (min P)|Drop tokens whose probability falls below this share of the most likely candidate.|Отбрасывать токены, чья вероятность ниже этой доли от самого вероятного.
+reasoningEffort|Reasoning effort|Глубина рассуждения|How much reasoning the model is asked for, where it reasons and its provider names the levels.|Сколько рассуждений запросить у модели, если она рассуждает и провайдер различает уровни.
 presencePenalty|Presence penalty|Штраф за присутствие|Subtract from the score of tokens that already appeared in the text.|Вычитать из веса токенов, которые уже встречались в тексте.
 frequencyPenalty|Frequency penalty|Штраф за частоту|Subtract from the score of tokens in proportion to how often they appeared.|Вычитать из веса токенов пропорционально тому, как часто они встречались.
 maxOutputTokens|Maximum output tokens|Максимум токенов ответа|Largest number of tokens a single answer may produce.|Наибольшее число токенов, которое может выдать один ответ.
