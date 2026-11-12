@@ -76,14 +76,27 @@ def smoke_app(executable: Path, directory: Path) -> None:
 
 
 def render_icon(path: Path) -> None:
+    """Draw the bundle icon the way this OS expects it. macOS wants Apple's icon grid:
+    the tile takes 824/1024 (~80%) of a transparent canvas, the same margin every system
+    app carries; a full-bleed tile is scaled up whole by the Dock and looks ~15% bigger
+    than its neighbours. Windows and Linux app icons are conventionally drawn edge to
+    edge, so there the tile fills the canvas."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     sys.path.insert(0, str(ROOT / "src"))
-    from PySide6.QtGui import QGuiApplication
+    from PySide6.QtCore import QRect, Qt
+    from PySide6.QtGui import QGuiApplication, QPainter, QPixmap
 
-    from opencode_model_sync.icons import logo
+    from opencode_model_sync.icons import _LOGO, _render
 
     app = QGuiApplication.instance() or QGuiApplication([])
-    logo().pixmap(512, 512).save(str(path))
+    side = 412 if sys.platform == "darwin" else 512  # 412 = 512 * 824/1024
+    offset = (512 - side) // 2
+    canvas = QPixmap(512, 512)
+    canvas.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(canvas)
+    painter.drawPixmap(QRect(offset, offset, side, side), _render(_LOGO, side))
+    painter.end()
+    canvas.save(str(path))
     del app
 
 

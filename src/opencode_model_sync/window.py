@@ -1285,7 +1285,7 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("OpenCode Companion")
-        self.setWindowIcon(icons.logo())
+        self.setWindowIcon(icons.logo_app())
         self.resize(1080, 700)
         self.setMinimumSize(860, 540)
         self.config_file = config_path()

@@ -57,7 +57,7 @@ def main() -> int:
         return 1
     app.setApplicationName("OpenCode Companion")
     app.setDesktopFileName("opencode-companion")
-    app.setWindowIcon(icons.logo())
+    app.setWindowIcon(icons.logo_app())
     app.setStyle("Fusion")
     apply_theme(app)
     settings = QSettings(APP_ID, APP_ID)

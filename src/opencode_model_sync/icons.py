@@ -85,6 +85,25 @@ def logo() -> QIcon:
     return result
 
 
+@cache
+def logo_app() -> QIcon:
+    """The logo on Apple's icon grid. Qt hands the window icon to the macOS Dock, which
+    scales the whole image into the tile, so this variant carries the same ~10% of air
+    around the tile that every system icon has; the full-bleed logo() would render
+    noticeably larger than its neighbours while the app runs."""
+    result = QIcon()
+    for size in (16, 32, 64, 128, 256, 512):
+        tile = _render(_LOGO, round(size * 0.86))  # 0.805/0.9375: visible tile at 80.5%
+        canvas = QPixmap(size, size)
+        canvas.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(canvas)
+        offset = (size - tile.width()) // 2
+        painter.drawPixmap(offset, offset, tile)
+        painter.end()
+        result.addPixmap(canvas)
+    return result
+
+
 def logo_svg() -> str:
     return _LOGO
 
