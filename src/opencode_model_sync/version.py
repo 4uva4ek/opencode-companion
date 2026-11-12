@@ -1,2 +1,2 @@
 """Version embedded in both source and frozen builds."""
-VERSION = "0.8.0"
+VERSION = "0.8.1"
